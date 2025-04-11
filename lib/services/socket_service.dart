@@ -1,484 +1,254 @@
+// services/socket_service.dart
 import 'dart:async';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:techniq8chat/services/api_constants.dart';
-import 'package:techniq8chat/models/message.dart';
 import 'package:techniq8chat/models/user_model.dart';
+import '../models/message.dart';
+import 'local_storage.dart';
 
 class SocketService {
-  // Singleton instance
-  static final SocketService _instance = SocketService._internal();
-  static SocketService get instance => _instance;
-  
-  // Socket instance
+  // Socket connection
   IO.Socket? _socket;
+  bool isConnected = false;
+  final String serverUrl = 'http://192.168.100.76:4400';
   
-  // Stream controllers for various events
-  final _messageReceivedController = StreamController<Message>.broadcast();
-  final _messageStatusController = StreamController<Map<String, dynamic>>.broadcast();
-  final _typingController = StreamController<String>.broadcast();
-  final _userStatusController = StreamController<Map<String, String>>.broadcast();
-  final _connectionStatusController = StreamController<bool>.broadcast();
+  // Service dependencies
+  final LocalStorage localStorage = LocalStorage();
   
-  // Connection status
-  bool _isConnected = false;
-  bool get isConnected => _isConnected;
-  Stream<bool> get connectionStatus => _connectionStatusController.stream;
+  // Current user
+  User? currentUser;
   
-  // Current user ID
-  String? _currentUserId = '';
+  // Stream controllers
+  final _onConnected = StreamController<bool>.broadcast();
+  final _onNewMessage = StreamController<Message>.broadcast();
+  final _onMessageStatus = StreamController<Map<String, dynamic>>.broadcast();
+  final _onUserStatus = StreamController<Map<String, String>>.broadcast();
+  final _onTyping = StreamController<String>.broadcast();
+  
+  // Streams
+  Stream<bool> get onConnected => _onConnected.stream;
+  Stream<Message> get onNewMessage => _onNewMessage.stream;
+  Stream<Map<String, dynamic>> get onMessageStatus => _onMessageStatus.stream;
+  Stream<Map<String, String>> get onUserStatus => _onUserStatus.stream;
+  Stream<String> get onTyping => _onTyping.stream;
   
   // Message queue for when socket is disconnected
-  List<Map<String, dynamic>> _messageQueue = [];
-  
-  // Connection retry
-  Timer? _reconnectTimer;
-  int _reconnectAttempts = 0;
-  static const int MAX_RECONNECT_ATTEMPTS = 5;
-  
-  // Private constructor
-  SocketService._internal();
-  
+  final List<Map<String, dynamic>> _messageQueue = [];
+
   // Initialize socket connection
-  Future<void> init(String userId) async {
-    if (_socket != null) {
-      _socket!.disconnect();
-      _socket = null;
-    }
+  void initSocket(User user) {
+    currentUser = user;
     
-    _currentUserId = userId;
-    _reconnectAttempts = 0;
-    print('Initializing socket for user: $_currentUserId');
-    
-    try {
-      await _connectSocket();
-    } catch (e) {
-      print('Error during initial socket connection: $e');
-      _scheduleReconnect();
-    }
-  }
-  
-  Future<void> _connectSocket() async {
-    // Get auth token for socket connection
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-    
-    if (token == null) {
-      print('No auth token available for socket connection');
-      throw Exception('No auth token available for socket connection');
-    }
-    
-    // Connect to socket with detailed options and debugging
-    _socket = IO.io(ApiConstants.socketUrl, {
+    _socket = IO.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
-      'query': {'token': token},
-      'extraHeaders': {'Authorization': 'Bearer $token'},
-      'forceNew': true,
-      'reconnection': true,
-      'reconnectionAttempts': 10,
-      'reconnectionDelay': 1000,
-      'reconnectionDelayMax': 5000,
-      'timeout': 20000,
+      'query': {'token': user.token},
     });
-    
-    // Set up socket event listeners
+
     _setupSocketListeners();
   }
-  
+
+  // Set up socket event listeners
   void _setupSocketListeners() {
-    if (_socket == null) return;
-    
-    // Clear any previous listeners to avoid duplicates
-    _socket!.clearListeners();
-    
-    // Connection events
-    _socket!.onConnect((_) {
-      print('Socket connected: ${_socket!.id}');
-      _isConnected = true;
-      _reconnectAttempts = 0;
-      _connectionStatusController.add(true);
+    _socket?.onConnect((_) {
+      print('Socket connected');
+      isConnected = true;
+      _onConnected.add(true);
       
       // Register user as connected
-      if (_currentUserId != null && _currentUserId!.isNotEmpty) {
-        print('Emitting user_connected event with ID: $_currentUserId');
-        _socket!.emit('user_connected', _currentUserId);
+      if (currentUser != null) {
+        _socket?.emit('user_connected', currentUser!.id);
       }
       
       // Process any queued messages
       _processMessageQueue();
     });
-    
-    _socket!.onDisconnect((_) {
+
+    _socket?.onDisconnect((_) {
       print('Socket disconnected');
-      _isConnected = false;
-      _connectionStatusController.add(false);
-      _scheduleReconnect();
+      isConnected = false;
+      _onConnected.add(false);
     });
-    
-    _socket!.onConnectError((error) {
-      print('Socket connect error: $error');
-      _isConnected = false;
-      _connectionStatusController.add(false);
-      _scheduleReconnect();
+
+    _socket?.onConnectError((error) {
+      print('Connection error: $error');
+      isConnected = false;
+      _onConnected.add(false);
     });
-    
-    _socket!.onError((error) {
-      print('Socket error: $error');
-    });
-    
-    // Set up message listeners
-    _setupMessageListeners();
-  }
-  
-  void _scheduleReconnect() {
-    // Cancel any existing reconnect timer
-    _reconnectTimer?.cancel();
-    
-    // Only try to reconnect if we haven't exceeded the maximum attempts
-    if (_reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      _reconnectAttempts++;
-      
-      // Exponential backoff: delay increases with each attempt
-      final delay = Duration(seconds: 2 * _reconnectAttempts);
-      
-      print('Scheduling socket reconnect attempt $_reconnectAttempts in ${delay.inSeconds} seconds');
-      
-      _reconnectTimer = Timer(delay, () async {
-        try {
-          await _connectSocket();
-        } catch (e) {
-          print('Reconnect attempt failed: $e');
-        }
-      });
-    } else {
-      print('Maximum reconnect attempts reached. Manual reconnection required.');
-    }
-  }
-  
-  void _setupMessageListeners() {
-    if (_socket == null) return;
-    
-    // New message received
-    _socket!.on('new_message', (data) {
+
+    // Listen for new messages
+    _socket?.on('new_message', (data) async {
       print('New message received: $data');
+      if (currentUser == null) return;
       
-      try {
-        // Handle different message formats
-        Map<String, dynamic> messageData;
-        if (data is Map) {
-          messageData = Map<String, dynamic>.from(data);
-        } else if (data is String) {
-          messageData = jsonDecode(data);
-        } else {
-          print('Unrecognized message format: ${data.runtimeType}');
-          return;
-        }
-        
-        final String senderId = messageData['sender'] is String 
-            ? messageData['sender'] 
-            : messageData['sender']?['_id'] ?? '';
-            
-        final String content = messageData['content'] ?? '';
-        final String messageId = messageData['_id'] ?? DateTime.now().millisecondsSinceEpoch.toString();
-        final String contentType = messageData['contentType'] ?? 'text';
-        final String status = messageData['status'] ?? 'delivered';
-        final DateTime createdAt = messageData['createdAt'] != null 
-            ? DateTime.parse(messageData['createdAt']) 
-            : DateTime.now();
-        
-        // Create a sender User object
-        final User sender = User(
-          id: senderId,
-          username: 'User', // This will be updated by the app when displayed
-          email: '',
-          profilePicture: '',
-          status: 'online',
-        );
-        
-        // Create a message object
-        final message = Message(
-          id: messageId,
-          conversationId: messageData['conversationId'] ?? '',
-          sender: sender,
-          content: content,
-          contentType: contentType,
-          status: status,
-          readBy: [],
-          reactions: [],
-          encrypted: false, // Already decrypted when received
-          createdAt: createdAt,
-        );
-        
-        // Add to stream
-        _messageReceivedController.add(message);
-        
-        // Mark as delivered
-        markMessageAsDelivered(messageId, senderId);
-      } catch (e) {
-        print('Error processing received message: $e');
-      }
+      // Create message object
+      final message = Message.fromSocketData(data, currentUser!.id);
+      
+      // Save to local storage
+      await localStorage.saveMessage(message);
+      
+      // Broadcast the new message
+      _onNewMessage.add(message);
+      
+      // Mark as delivered
+      markMessageAsDelivered(message.id, message.senderId);
     });
-    
-    // Message status updates
-    _socket!.on('message_status_update', (data) {
-      print('Message status update: $data');
-      if (data is Map) {
-        _messageStatusController.add({
-          'messageId': data['messageId'],
-          'status': data['status']
-        });
-      }
-    });
-    
-    // Message delivered confirmation
-    _socket!.on('message_delivered', (data) {
+
+    // Listen for message delivery status
+    _socket?.on('message_delivered', (data) {
       print('Message delivered: $data');
-      if (data is Map) {
-        _messageStatusController.add({
-          'messageId': data['messageId'],
-          'status': 'delivered'
-        });
-      }
+      final messageId = data['messageId'];
+      
+      // Broadcast status update
+      _onMessageStatus.add({
+        'messageId': messageId,
+        'status': 'delivered',
+      });
     });
-    
-    // User typing indicator
-    _socket!.on('user_typing', (data) {
+
+    _socket?.on('message_pending', (data) {
+      print('Message pending: $data');
+      final messageId = data['messageId'];
+      
+      // Broadcast status update
+      _onMessageStatus.add({
+        'messageId': messageId,
+        'status': 'pending',
+      });
+    });
+
+    _socket?.on('message_status_update', (data) {
+      print('Message status update: $data');
+      final messageId = data['messageId'];
+      final status = data['status'];
+      
+      // Broadcast status update
+      _onMessageStatus.add({
+        'messageId': messageId,
+        'status': status,
+      });
+    });
+
+    // Listen for user status changes
+    _socket?.on('user_status', (data) {
+      print('User status update: $data');
+      final userId = data['userId'];
+      final status = data['status'];
+      
+      // Broadcast user status update
+      _onUserStatus.add({
+        'userId': userId,
+        'status': status,
+      });
+    });
+
+    // Listen for typing indicator
+    _socket?.on('user_typing', (data) {
       print('User typing: $data');
-      
-      String senderId = '';
-      if (data is Map) {
-        senderId = data['senderId'] ?? '';
-      } else if (data is String) {
-        try {
-          final Map<String, dynamic> typingData = jsonDecode(data);
-          senderId = typingData['senderId'] ?? '';
-        } catch (e) {
-          print('Error parsing typing data: $e');
-        }
-      }
-      
-      if (senderId.isNotEmpty) {
-        _typingController.add(senderId);
-      }
+      _onTyping.add(data['senderId']);
     });
-    
-    // User status changes
-    _socket!.on('user_status', (data) {
-      print('User status changed: $data');
+
+    // Listen for conversation history
+    _socket?.on('conversation_history', (data) async {
+      print('Received conversation history: $data');
+      if (currentUser == null) return;
       
-      Map<String, String> statusData = {};
-      if (data is Map) {
-        statusData = {
-          'userId': data['userId']?.toString() ?? '',
-          'status': data['status']?.toString() ?? 'offline'
-        };
-      } else if (data is String) {
-        try {
-          final Map<String, dynamic> parsedData = jsonDecode(data);
-          statusData = {
-            'userId': parsedData['userId']?.toString() ?? '',
-            'status': parsedData['status']?.toString() ?? 'offline'
-          };
-        } catch (e) {
-          print('Error parsing status data: $e');
-        }
-      }
+      final messages = data['messages'] as List<dynamic>? ?? [];
       
-      if (statusData.isNotEmpty && statusData['userId'] != null) {
-        _userStatusController.add(statusData);
+      // Save messages to local storage
+      for (final msg in messages) {
+        final message = Message.fromSocketData(msg, currentUser!.id);
+        await localStorage.saveMessage(message);
       }
     });
   }
-  
-  // Process queued messages when connection is restored
-  void _processMessageQueue() {
-    print('Processing message queue (${_messageQueue.length} messages)');
-    
-    if (!_isConnected || _socket == null || _messageQueue.isEmpty) {
+
+  // Send a message
+  void sendMessage(String receiverId, String content, {String? tempId}) {
+    if (!isConnected) {
+      // Queue message for later
+      _messageQueue.add({
+        'receiverId': receiverId,
+        'message': content,
+        'messageId': tempId,
+      });
       return;
     }
     
-    // Create a copy of the queue and clear the original
-    final messagesToSend = List<Map<String, dynamic>>.from(_messageQueue);
+    _socket?.emit('send_message', {
+      'receiverId': receiverId,
+      'message': content,
+      if (tempId != null) 'messageId': tempId,
+    });
+  }
+
+  // Process queued messages when socket reconnects
+  void _processMessageQueue() {
+    if (!isConnected || _messageQueue.isEmpty) return;
+    
+    print('Processing ${_messageQueue.length} queued messages');
+    
+    List<Map<String, dynamic>> processedQueue = List.from(_messageQueue);
     _messageQueue.clear();
     
-    // Send each queued message
-    for (final messageData in messagesToSend) {
-      print('Sending queued message: ${messageData['message']} to ${messageData['receiverId']}');
-      _socket!.emit('send_message', messageData);
+    for (final messageData in processedQueue) {
+      _socket?.emit('send_message', messageData);
     }
   }
-  
-  // Send a message via socket
-  void sendMessage(String receiverId, String message, String messageId) {
-    final messageData = {
-      'receiverId': receiverId,
-      'message': message,
-      'messageId': messageId,
-      'senderId': _currentUserId,
-    };
-    
-    if (!_isConnected || _socket == null) {
-      print('Socket not connected, queuing message for later');
-      _messageQueue.add(messageData);
-      return;
-    }
-    
-    print('Emitting send_message event: $messageData');
-    _socket!.emit('send_message', messageData);
-  }
-  
-  // Mark a message as delivered
+
+  // Mark message as delivered
   void markMessageAsDelivered(String messageId, String senderId) {
-    if (!_isConnected || _socket == null) return;
+    if (!isConnected) return;
     
-    final deliveryData = {
+    _socket?.emit('message_status_update', {
+      'messageId': messageId,
+      'status': 'delivered',
+      'senderId': senderId,
+    });
+  }
+
+  // Mark message as read
+  void markMessageAsRead(String messageId, String senderId) {
+    if (!isConnected) return;
+    
+    _socket?.emit('message_read', {
       'messageId': messageId,
       'senderId': senderId,
-      'status': 'delivered'
-    };
-    
-    print('Emitting message_delivered event: $deliveryData');
-    _socket!.emit('message_delivered', deliveryData);
+    });
   }
-  
-  // Mark a message as read
-  void markMessageAsRead(String messageId, String senderId) {
-    if (!_isConnected || _socket == null) {
-      // Queue this operation for when we're connected
-      _messageQueue.add({
-        'type': 'read',
-        'messageId': messageId,
-        'senderId': senderId
-      });
-      return;
-    }
-    
-    final readData = {
-      'messageId': messageId,
-      'senderId': senderId
-    };
-    
-    print('Emitting message_read event: $readData');
-    _socket!.emit('message_read', readData);
-  }
-  
+
   // Send typing indicator
-  void sendTypingIndicator(String receiverId) {
-    if (!_isConnected || _socket == null) return;
+  void sendTyping(String receiverId) {
+    if (!isConnected) return;
     
-    final typingData = {
+    _socket?.emit('typing', {
       'receiverId': receiverId,
-      'senderId': _currentUserId
-    };
+    });
+  }
+
+  // Get conversation history
+  void getConversationHistory(String userId, String otherUserId) {
+    if (!isConnected) return;
     
-    print('Emitting typing event: $typingData');
-    _socket!.emit('typing', typingData);
+    _socket?.emit('get_conversation', {
+      'userId': userId,
+      'otherUserId': otherUserId,
+    });
   }
-  
-  // Update user status
-  void updateUserStatus(String status) {
-    if (!_isConnected || _socket == null) {
-      // Queue this operation for when we're connected
-      _messageQueue.add({
-        'type': 'status',
-        'status': status
-      });
-      return;
-    }
-    
-    final statusData = {
-      'status': status
-    };
-    
-    print('Emitting update_status event: $statusData');
-    _socket!.emit('update_status', statusData);
-  }
-  
-  // Force reconnection attempt
-  Future<void> reconnect() async {
-    if (_socket != null) {
-      _socket!.disconnect();
-      _socket = null;
-    }
-    
-    _reconnectAttempts = 0;
-    try {
-      await _connectSocket();
-    } catch (e) {
-      print('Forced reconnect failed: $e');
-      _scheduleReconnect();
-    }
-  }
-  
-  // Get stream of new messages from a specific user
-  Stream<Message> onMessageReceived(String senderId) {
-    print('Creating message stream for sender: $senderId');
-    return _messageReceivedController.stream.where(
-      (message) => message.sender.id == senderId
-    );
-  }
-  
-  // Get stream of message status updates
-  Stream<Map<String, dynamic>> onMessageStatusUpdated() {
-    return _messageStatusController.stream;
-  }
-  
-  // Get stream of typing indicators from a specific user
-  Stream<String> onUserTyping(String userId) {
-    return _typingController.stream.where(
-      (senderId) => senderId == userId
-    );
-  }
-  
-  // Get stream of user status updates
-  Stream<Map<String, String>> onUserStatusChanged() {
-    return _userStatusController.stream;
-  }
-  
-  // Request conversation history
-  void requestConversationHistory(String otherUserId) {
-    if (!_isConnected || _socket == null) {
-      // Queue this operation for when we're connected
-      _messageQueue.add({
-        'type': 'history',
-        'otherUserId': otherUserId
-      });
-      return;
-    }
-    
-    final requestData = {
-      'userId': _currentUserId,
-      'otherUserId': otherUserId
-    };
-    
-    print('Requesting conversation history: $requestData');
-    _socket!.emit('get_conversation', requestData);
-  }
-  
-  // Check if socket is connected
-  bool isSocketConnected() {
-    return _isConnected && _socket != null;
-  }
-  
-  // Close socket connection
+
+  // Disconnect socket
   void disconnect() {
-    _reconnectTimer?.cancel();
     _socket?.disconnect();
     _socket = null;
-    _isConnected = false;
-    _connectionStatusController.add(false);
+    isConnected = false;
   }
-  
-  // Dispose all resources
+
+  // Clean up resources
   void dispose() {
+    _onConnected.close();
+    _onNewMessage.close();
+    _onMessageStatus.close();
+    _onUserStatus.close();
+    _onTyping.close();
     disconnect();
-    _messageReceivedController.close();
-    _messageStatusController.close();
-    _typingController.close();
-    _userStatusController.close();
-    _connectionStatusController.close();
   }
 }

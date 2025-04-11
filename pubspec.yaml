@@ -38,6 +38,7 @@ dependencies:
   intl: ^0.17.0
   sqflite: ^2.3.0  
   path: ^1.8.3     
+  
 
 
 

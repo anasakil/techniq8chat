@@ -1,310 +1,422 @@
-import 'dart:convert';
-import 'dart:math';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:techniq8chat/models/message.dart';
-import 'package:techniq8chat/models/user_model.dart';
-import 'package:techniq8chat/services/api_constants.dart';
+// // services/chat_service.dart
+// import 'dart:async';
+// import 'package:socket_io_client/socket_io_client.dart' as IO;
+// import 'package:techniq8chat/models/user_model.dart';
+// import '../models/message.dart';
+// import '../models/conversation.dart';
+// import '../services/local_storage.dart';
+// import '../services/user_repository.dart';
 
-class ChatService {
-  // Headers for API requests
-  Future<Map<String, String>> _getHeaders() async {
-    Map<String, String> headers = {
-      'Content-Type': 'application/json',
-    };
+// class ChatService {
+//   // Socket connection
+//   IO.Socket? _socket;
+//   bool isConnected = false;
+//   final String serverUrl;
+  
+//   // Services
+//   final LocalStorage localStorage = LocalStorage();
+//   late UserRepository userRepository;
+  
+//   // Current user
+//   User? currentUser;
+  
+//   // StreamControllers for events
+//   final _onConnected = StreamController<bool>.broadcast();
+//   final _onNewMessage = StreamController<Message>.broadcast();
+//   final _onConversationsUpdated = StreamController<List<Conversation>>.broadcast();
+//   final _onTyping = StreamController<String>.broadcast();
+//   final _onUserStatus = StreamController<Map<String, String>>.broadcast();
+//   final _onMessageStatus = StreamController<Map<String, dynamic>>.broadcast();
+  
+//   // Streams
+//   Stream<bool> get onConnected => _onConnected.stream;
+//   Stream<Message> get onNewMessage => _onNewMessage.stream;
+//   Stream<List<Conversation>> get onConversationsUpdated => _onConversationsUpdated.stream;
+//   Stream<String> get onTyping => _onTyping.stream;
+//   Stream<Map<String, String>> get onUserStatus => _onUserStatus.stream;
+//   Stream<Map<String, dynamic>> get onMessageStatus => _onMessageStatus.stream;
+  
+//   // Message queue for when socket is disconnected
+//   final List<Map<String, dynamic>> _messageQueue = [];
+  
+//   ChatService({required this.serverUrl});
 
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('token');
+//   // Initialize the service
+//   Future<void> initialize(User user) async {
+//     // Store current user
+//     currentUser = user;
+//     await localStorage.saveCurrentUser(user);
     
-    if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
-      print('Token found and added to headers: ${token.substring(0, min(10, token.length))}...');
-    } else {
-      print('No token found in SharedPreferences');
-    }
+//     // Initialize user repository
+//     userRepository = UserRepository(
+//       baseUrl: serverUrl,
+//       token: user.token,
+//     );
     
-    return headers;
-  }
-  
-  // Get messages between current user and another user
-  Future<List<Message>> getMessagesByUser(String userId) async {
-    try {
-      print('Fetching messages with user: $userId');
-      print('URL: ${ApiConstants.messagesByUser}/$userId');
-      
-      final headers = await _getHeaders();
-      print('Headers: $headers');
-      
-      final response = await http.get(
-        Uri.parse('${ApiConstants.messagesByUser}/$userId'),
-        headers: headers,
-      );
+//     // Initialize socket connection
+//     _initSocket(user.token);
+    
+//     // Load and broadcast initial conversations
+//     await _loadAndBroadcastConversations();
+//   }
 
-      print('Response status: ${response.statusCode}');
-      
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final List<Message> messages = [];
-        
-        if (data['messages'] != null) {
-          print('Message count: ${data['messages'].length}');
-          for (var messageData in data['messages']) {
-            messages.add(Message.fromJson(messageData));
-          }
-        } else {
-          print('No messages found in response');
-        }
-        
-        return messages;
-      } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to get messages');
-      }
-    } catch (e) {
-      print('Error getting messages: $e');
-      throw Exception('Error getting messages: $e');
-    }
-  }
-  
-  // Send a message to a user
-  Future<Message> sendMessage(String receiverId, String content, {String contentType = 'text'}) async {
-    try {
-      final headers = await _getHeaders();
-      print('Sending message to: $receiverId with content: $content');
-      
-      final response = await http.post(
-        Uri.parse(ApiConstants.sendMessage),
-        headers: headers,
-        body: jsonEncode({
-          'receiverId': receiverId,
-          'content': content,
-          'contentType': contentType,
-        }),
-      );
+//   // Load conversations from local storage and broadcast them
+//   Future<void> _loadAndBroadcastConversations() async {
+//     final conversations = await localStorage.getConversations();
+//     _onConversationsUpdated.add(conversations);
+//   }
 
-      print('Send message response status: ${response.statusCode}');
-      
-      if (response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        return Message.fromJson(data);
-      } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to send message');
-      }
-    } catch (e) {
-      print('Error sending message: $e');
-      throw Exception('Error sending message: $e');
-    }
-  }
-  
-  // Mark conversation as read
-  Future<void> markConversationAsRead(String userId) async {
-    try {
-      // First check if there's a conversation ID
-      final conversationId = await _getConversationId(userId);
-      
-      if (conversationId == null) {
-        // No conversation yet, so nothing to mark as read
-        return;
-      }
-      
-      final headers = await _getHeaders();
-      final response = await http.put(
-        Uri.parse('${ApiConstants.conversationsApi}/$conversationId/read'),
-        headers: headers,
-      );
-      
-      print('Mark as read response: ${response.statusCode}');
-      
-      if (response.statusCode != 200) {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to mark conversation as read');
-      }
-    } catch (e) {
-      print('Error marking conversation as read: $e');
-      throw Exception('Error marking conversation as read: $e');
-    }
-  }
-  
-  // Get conversation ID for two users
-  Future<String?> _getConversationId(String otherUserId) async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse(ApiConstants.conversationsApi),
-        headers: headers,
-      );
+//   // Initialize socket connection
+//   void _initSocket(String token) {
+//     _socket = IO.io(serverUrl, <String, dynamic>{
+//       'transports': ['websocket'],
+//       'autoConnect': true,
+//       'query': {'token': token},
+//     });
 
-      if (response.statusCode == 200) {
-        final List<dynamic> conversations = jsonDecode(response.body);
-        
-        // Find conversation with the other user
-        for (var conv in conversations) {
-          final List<dynamic> participants = conv['participants'];
-          
-          bool hasOtherUser = false;
-          bool isOneOnOne = !conv['isGroup'] && participants.length == 2;
-          
-          if (isOneOnOne) {
-            for (var participant in participants) {
-              if (participant['_id'] == otherUserId) {
-                hasOtherUser = true;
-                break;
-              }
-            }
-            
-            if (hasOtherUser) {
-              return conv['_id'];
-            }
-          }
-        }
-      }
-      
-      return null;
-    } catch (e) {
-      print('Error getting conversation ID: $e');
-      return null;
-    }
-  }
-  
-  // Get all recent conversations
-  Future<List<dynamic>> getConversations() async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse(ApiConstants.conversations),
-        headers: headers,
-      );
+//     _setupSocketListeners();
+//   }
 
-      print('Get conversations response: ${response.statusCode}');
+//   // Setup socket event listeners
+//   void _setupSocketListeners() {
+//     _socket?.onConnect((_) {
+//       print('Socket connected');
+//       isConnected = true;
+//       _onConnected.add(true);
       
-      if (response.statusCode == 200) {
-        final List<dynamic> conversationsData = jsonDecode(response.body);
-        
-        // Process the data to make it easier to use
-        List<dynamic> processedConversations = [];
-        
-        for (var conversation in conversationsData) {
-          // Find the other participant (for one-on-one chats)
-          dynamic otherParticipant;
-          if (conversation['participants'] is List && conversation['participants'].length > 0) {
-            // Get current user from SharedPreferences to compare
-            SharedPreferences prefs = await SharedPreferences.getInstance();
-            String? currentUserId = prefs.getString('userId');
-            
-            for (var participant in conversation['participants']) {
-              if (participant['_id'] != currentUserId) {
-                otherParticipant = participant;
-                break;
-              }
-            }
-          }
-          
-          // If we found another participant, add conversation with their details
-          if (otherParticipant != null) {
-            processedConversations.add({
-              '_id': conversation['_id'],
-              'username': otherParticipant['username'],
-              'profilePicture': otherParticipant['profilePicture'],
-              'status': otherParticipant['status'] ?? 'offline',
-              'lastMessage': conversation['lastMessage'],
-              'unreadCount': conversation['unreadCount']?.toString(),
-              'updatedAt': conversation['updatedAt'],
-              'isGroup': conversation['isGroup'] ?? false,
-              'participants': conversation['participants'],
-            });
-          }
-        }
-        
-        return processedConversations;
-      } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to get conversations');
-      }
-    } catch (e) {
-      print('Error getting conversations: $e');
-      throw Exception('Error getting conversations: $e');
-    }
-  }
-  
-  // Create a new conversation
-  Future<Map<String, dynamic>> createConversation(String otherUserId) async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse(ApiConstants.conversationsApi),
-        headers: headers,
-        body: jsonEncode({
-          'participants': [otherUserId],
-          'isGroup': false,
-        }),
-      );
+//       // Register user as connected
+//       if (currentUser != null) {
+//         _socket?.emit('user_connected', currentUser!.id);
+//       }
+      
+//       // Process any queued messages
+//       _processMessageQueue();
+//     });
 
-      print('Create conversation response: ${response.statusCode}');
-      
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return jsonDecode(response.body);
-      } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to create conversation');
-      }
-    } catch (e) {
-      print('Error creating conversation: $e');
-      throw Exception('Error creating conversation: $e');
-    }
-  }
-  
-  // Get all users
-  Future<List<User>> getAllUsers() async {
-    try {
-      print('Fetching all users');
-      
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse(ApiConstants.searchUsers),
-        headers: headers,
-      );
+//     _socket?.onDisconnect((_) {
+//       print('Socket disconnected');
+//       isConnected = false;
+//       _onConnected.add(false);
+//     });
 
-      print('Get all users response: ${response.statusCode}');
-      
-      if (response.statusCode == 200) {
-        final List<dynamic> userData = jsonDecode(response.body);
-        print('Found ${userData.length} users');
-        return userData.map((data) => User.fromJson(data)).toList();
-      } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to get users');
-      }
-    } catch (e) {
-      print('Error getting users: $e');
-      throw Exception('Error getting users: $e');
-    }
-  }
-  
-  // Search users
-  Future<List<User>> searchUsers(String query) async {
-    try {
-      print('Searching users with query: $query');
-      
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('${ApiConstants.searchUsers}?query=$query'),
-        headers: headers,
-      );
+//     _socket?.onConnectError((error) {
+//       print('Connection error: $error');
+//       isConnected = false;
+//       _onConnected.add(false);
+//     });
 
-      print('Search users response: ${response.statusCode}');
+//     // Listen for new messages
+//     _socket?.on('new_message', (data) async {
+//       print('New message received: $data');
+//       if (currentUser == null) return;
       
-      if (response.statusCode == 200) {
-        final List<dynamic> userData = jsonDecode(response.body);
-        print('Found ${userData.length} users matching query');
-        return userData.map((data) => User.fromJson(data)).toList();
-      } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to search users');
-      }
-    } catch (e) {
-      print('Error searching users: $e');
-      throw Exception('Error searching users: $e');
-    }
-  }
-}
+//       // Create message object
+//       final message = Message.fromSocketData(data, currentUser!.id);
+      
+//       // Save to local storage
+//       await localStorage.saveMessage(message);
+      
+//       // Update conversation (will be created if it doesn't exist)
+//       await localStorage.updateConversationFromMessage(message);
+      
+//       // Broadcast updated conversations
+//       await _loadAndBroadcastConversations();
+      
+//       // Broadcast the new message
+//       _onNewMessage.add(message);
+      
+//       // Mark as delivered
+//       markMessageAsDelivered(message.id, message.senderId);
+//     });
+
+//     // Listen for message delivery status
+//     _socket?.on('message_delivered', (data) async {
+//       print('Message delivered: $data');
+//       final messageId = data['messageId'];
+      
+//       // Update message status in local storage
+//       await localStorage.updateMessageStatus(messageId, 'delivered');
+      
+//       // Broadcast status update
+//       _onMessageStatus.add({
+//         'messageId': messageId,
+//         'status': 'delivered',
+//       });
+//     });
+
+//     _socket?.on('message_pending', (data) async {
+//       print('Message pending: $data');
+//       final messageId = data['messageId'];
+      
+//       // Update message status in local storage
+//       await localStorage.updateMessageStatus(messageId, 'pending');
+      
+//       // Broadcast status update
+//       _onMessageStatus.add({
+//         'messageId': messageId,
+//         'status': 'pending',
+//       });
+//     });
+
+//     _socket?.on('message_status_update', (data) async {
+//       print('Message status update: $data');
+//       final messageId = data['messageId'];
+//       final status = data['status'];
+      
+//       // Update message status in local storage
+//       await localStorage.updateMessageStatus(messageId, status);
+      
+//       // Broadcast status update
+//       _onMessageStatus.add({
+//         'messageId': messageId,
+//         'status': status,
+//       });
+//     });
+
+//     // Listen for user status changes
+//     _socket?.on('user_status', (data) {
+//       print('User status update: $data');
+//       final userId = data['userId'];
+//       final status = data['status'];
+      
+//       // Broadcast user status update
+//       _onUserStatus.add({
+//         'userId': userId,
+//         'status': status,
+//       });
+      
+//       // Update conversation status if exists
+//       _updateConversationStatus(userId, status);
+//     });
+
+//     // Listen for typing indicator
+//     _socket?.on('user_typing', (data) {
+//       print('User typing: $data');
+//       _onTyping.add(data['senderId']);
+//     });
+
+//     // Listen for conversation history response
+//     _socket?.on('conversation_history', (data) async {
+//       print('Received conversation history: $data');
+//       if (currentUser == null) return;
+      
+//       final userId = data['userId'];
+//       final messages = data['messages'] as List<dynamic>? ?? [];
+      
+//       // Save messages to local storage
+//       final messagesList = messages.map((msg) => 
+//         Message.fromSocketData(msg, currentUser!.id)
+//       ).toList();
+      
+//       for (final message in messagesList) {
+//         await localStorage.saveMessage(message);
+//       }
+      
+//       // Update conversations
+//       await _loadAndBroadcastConversations();
+//     });
+//   }
+
+//   // Send a message
+//   Future<Message> sendMessage(String receiverId, String content) async {
+//     if (currentUser == null) {
+//       throw Exception('No current user');
+//     }
+    
+//     // Create temporary message
+//     final tempMessage = Message.createTemp(
+//       senderId: currentUser!.id,
+//       receiverId: receiverId,
+//       content: content,
+//     );
+    
+//     // Save to local storage
+//     await localStorage.saveMessage(tempMessage);
+    
+//     // Broadcast updated conversations
+//     await _loadAndBroadcastConversations();
+    
+//     // Broadcast the new message
+//     _onNewMessage.add(tempMessage);
+    
+//     // Send through socket
+//     if (isConnected) {
+//       _socket?.emit('send_message', {
+//         'receiverId': receiverId,
+//         'message': content,
+//         'messageId': tempMessage.id,
+//       });
+//     } else {
+//       // Queue for later
+//       _messageQueue.add({
+//         'receiverId': receiverId,
+//         'message': content,
+//         'messageId': tempMessage.id,
+//       });
+      
+//       // Update status to pending
+//       await localStorage.updateMessageStatus(tempMessage.id, 'pending');
+      
+//       // Broadcast status update
+//       _onMessageStatus.add({
+//         'messageId': tempMessage.id,
+//         'status': 'pending',
+//       });
+//     }
+    
+//     return tempMessage;
+//   }
+
+//   // Process queued messages when socket reconnects
+//   void _processMessageQueue() {
+//     if (!isConnected || _messageQueue.isEmpty) return;
+    
+//     print('Processing ${_messageQueue.length} queued messages');
+    
+//     List<Map<String, dynamic>> processedQueue = List.from(_messageQueue);
+//     _messageQueue.clear();
+    
+//     for (final messageData in processedQueue) {
+//       _socket?.emit('send_message', messageData);
+      
+//       // Update status to sent
+//       localStorage.updateMessageStatus(messageData['messageId'], 'sent');
+      
+//       // Broadcast status update
+//       _onMessageStatus.add({
+//         'messageId': messageData['messageId'],
+//         'status': 'sent',
+//       });
+//     }
+//   }
+
+//   // Mark message as delivered
+//   void markMessageAsDelivered(String messageId, String senderId) {
+//     if (!isConnected) return;
+    
+//     _socket?.emit('message_status_update', {
+//       'messageId': messageId,
+//       'status': 'delivered',
+//       'senderId': senderId,
+//     });
+//   }
+
+//   // Mark message as read
+//   Future<void> markMessageAsRead(String messageId, String senderId) async {
+//     if (!isConnected) return;
+    
+//     _socket?.emit('message_read', {
+//       'messageId': messageId,
+//       'senderId': senderId,
+//     });
+    
+//     // Update message status locally
+//     await localStorage.updateMessageStatus(messageId, 'read');
+//   }
+
+//   // Mark all messages in a conversation as read
+//   Future<void> markConversationAsRead(String conversationId) async {
+//     // Get all messages for this conversation
+//     final messages = await localStorage.getMessages(conversationId);
+    
+//     // Mark unread messages as read
+//     for (final message in messages) {
+//       if (!message.isSent && message.status != 'read') {
+//         await markMessageAsRead(message.id, message.senderId);
+//       }
+//     }
+    
+//     // Update conversation unread count
+//     await localStorage.markConversationAsRead(conversationId);
+    
+//     // Broadcast updated conversations
+//     await _loadAndBroadcastConversations();
+//   }
+
+//   // Send typing indicator
+//   void sendTyping(String receiverId) {
+//     if (!isConnected) return;
+    
+//     _socket?.emit('typing', {
+//       'receiverId': receiverId,
+//     });
+//   }
+
+//   // Get conversation history from socket
+//   void getConversationHistory(String otherUserId) {
+//     if (!isConnected || currentUser == null) return;
+    
+//     _socket?.emit('get_conversation', {
+//       'userId': currentUser!.id,
+//       'otherUserId': otherUserId,
+//     });
+//   }
+
+//   // Update a conversation's status
+//   Future<void> _updateConversationStatus(String userId, String status) async {
+//     final conversations = await localStorage.getConversations();
+//     final index = conversations.indexWhere((c) => c.id == userId);
+    
+//     if (index >= 0) {
+//       conversations[index] = conversations[index].copyWith(status: status);
+//       await localStorage.saveConversations(conversations);
+//       await _loadAndBroadcastConversations();
+//     }
+//   }
+
+//   // Get or create a conversation with a user
+//   Future<Conversation> getOrCreateConversation(User otherUser) async {
+//     final conversations = await localStorage.getConversations();
+//     final index = conversations.indexWhere((c) => c.id == otherUser.id);
+    
+//     if (index >= 0) {
+//       return conversations[index];
+//     } else {
+//       // Create new conversation
+//       final newConversation = Conversation(
+//         id: otherUser.id,
+//         name: otherUser.username,
+//         profilePicture: otherUser.profilePicture,
+//         status: otherUser.status,
+//       );
+      
+//       await localStorage.upsertConversation(newConversation);
+//       await _loadAndBroadcastConversations();
+      
+//       return newConversation;
+//     }
+//   }
+
+//   // Get messages for a conversation
+//   Future<List<Message>> getMessages(String conversationId) async {
+//     return await localStorage.getMessages(conversationId);
+//   }
+
+//   // Delete a conversation
+//   Future<void> deleteConversation(String conversationId) async {
+//     await localStorage.deleteConversation(conversationId);
+//     await _loadAndBroadcastConversations();
+//   }
+
+//   // Delete a message
+//   Future<void> deleteMessage(String conversationId, String messageId) async {
+//     final success = await localStorage.deleteMessage(conversationId, messageId);
+//     if (success) {
+//       await _loadAndBroadcastConversations();
+//     }
+//   }
+
+//   // Disconnect and clean up
+//   void dispose() {
+//     _socket?.disconnect();
+//     _socket = null;
+//     isConnected = false;
+    
+//     _onConnected.close();
+//     _onNewMessage.close();
+//     _onConversationsUpdated.close();
+//     _onTyping.close();
+//     _onUserStatus.close();
+//     _onMessageStatus.close();
+//   }
+// }

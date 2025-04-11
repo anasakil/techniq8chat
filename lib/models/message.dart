@@ -1,105 +1,124 @@
-import 'package:techniq8chat/models/user_model.dart';
-
 class Message {
   final String id;
-  final String conversationId;
-  final User sender;
+  final String senderId;
+  final String receiverId;
   final String content;
-  final String contentType;
+  final String contentType; // text, image, video, etc.
+  final DateTime createdAt;
+  final String status; // sending, sent, delivered, read, failed
+  final bool isSent; // Whether current user is the sender
   final String? fileUrl;
   final String? fileName;
-  final int? fileSize;
-  final String status;
-  final List<MessageRead> readBy;
-  final List<MessageReaction> reactions;
-  final String? forwardedFrom;
-  final bool encrypted;
-  final DateTime createdAt;
-  
+
   Message({
     required this.id,
-    required this.conversationId,
-    required this.sender,
+    required this.senderId,
+    required this.receiverId,
     required this.content,
-    required this.contentType,
+    this.contentType = 'text',
+    required this.createdAt,
+    required this.status,
+    required this.isSent,
     this.fileUrl,
     this.fileName,
-    this.fileSize,
-    required this.status,
-    required this.readBy,
-    required this.reactions,
-    this.forwardedFrom,
-    required this.encrypted,
-    required this.createdAt,
   });
-  
-  factory Message.fromJson(Map<String, dynamic> json) {
-    List<MessageRead> readByList = [];
-    if (json['readBy'] != null) {
-      readByList = (json['readBy'] as List)
-          .map((read) => MessageRead.fromJson(read))
-          .toList();
-    }
-    
-    List<MessageReaction> reactionsList = [];
-    if (json['reactions'] != null) {
-      reactionsList = (json['reactions'] as List)
-          .map((reaction) => MessageReaction.fromJson(reaction))
-          .toList();
-    }
+
+  factory Message.fromJson(Map<String, dynamic> json, String currentUserId) {
+    final senderId = json['sender'] is Map ? json['sender']['_id'] : json['sender'];
     
     return Message(
       id: json['_id'],
-      conversationId: json['conversationId'] ?? '',
-      sender: User.fromJson(json['sender']),
+      senderId: senderId,
+      receiverId: json['receiver'] is Map ? json['receiver']['_id'] : json['receiver'],
       content: json['content'],
       contentType: json['contentType'] ?? 'text',
+      createdAt: DateTime.parse(json['createdAt']),
+      status: json['status'] ?? 'sent',
+      isSent: senderId == currentUserId,
       fileUrl: json['fileUrl'],
       fileName: json['fileName'],
-      fileSize: json['fileSize'],
-      status: json['status'] ?? 'sent',
-      readBy: readByList,
-      reactions: reactionsList,
-      forwardedFrom: json['forwardedFrom'],
-      encrypted: json['encrypted'] ?? true,
-      createdAt: DateTime.parse(json['createdAt']),
     );
   }
-}
 
-class MessageRead {
-  final User user;
-  final DateTime readAt;
-  
-  MessageRead({
-    required this.user,
-    required this.readAt,
-  });
-  
-  factory MessageRead.fromJson(Map<String, dynamic> json) {
-    return MessageRead(
-      user: User.fromJson(json['user']),
-      readAt: DateTime.parse(json['readAt']),
+  // Create from socket data
+  factory Message.fromSocketData(Map<String, dynamic> data, String currentUserId) {
+    final senderId = data['sender'] is Map ? data['sender']['_id'] : data['sender'];
+    final receiverId = data['receiver'] is Map ? data['receiver']['_id'] : data['receiver'];
+    
+    return Message(
+      id: data['_id'],
+      senderId: senderId,
+      receiverId: receiverId,
+      content: data['content'],
+      contentType: data['contentType'] ?? 'text',
+      createdAt: data['createdAt'] != null 
+          ? DateTime.parse(data['createdAt']) 
+          : DateTime.now(),
+      status: data['status'] ?? 'sent',
+      isSent: senderId == currentUserId,
+      fileUrl: data['fileUrl'],
+      fileName: data['fileName'],
     );
   }
-}
 
-class MessageReaction {
-  final User user;
-  final String type;
-  final DateTime createdAt;
-  
-  MessageReaction({
-    required this.user,
-    required this.type,
-    required this.createdAt,
-  });
-  
-  factory MessageReaction.fromJson(Map<String, dynamic> json) {
-    return MessageReaction(
-      user: User.fromJson(json['user']),
-      type: json['type'],
-      createdAt: DateTime.parse(json['createdAt']),
+  // Create a temporary message for optimistic UI updates
+  factory Message.createTemp({
+    required String senderId,
+    required String receiverId,
+    required String content,
+    String contentType = 'text',
+    String? fileUrl,
+    String? fileName,
+  }) {
+    final now = DateTime.now();
+    return Message(
+      id: 'temp_${now.millisecondsSinceEpoch}',
+      senderId: senderId,
+      receiverId: receiverId,
+      content: content,
+      contentType: contentType,
+      createdAt: now,
+      status: 'sending',
+      isSent: true,
+      fileUrl: fileUrl,
+      fileName: fileName,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      '_id': id,
+      'sender': senderId,
+      'receiver': receiverId,
+      'content': content,
+      'contentType': contentType,
+      'createdAt': createdAt.toIso8601String(),
+      'status': status,
+      'isSent': isSent,
+      'fileUrl': fileUrl,
+      'fileName': fileName,
+    };
+  }
+
+  Message copyWith({
+    String? id,
+    String? status,
+    String? content,
+    String? contentType,
+    String? fileUrl,
+    String? fileName,
+  }) {
+    return Message(
+      id: id ?? this.id,
+      senderId: this.senderId,
+      receiverId: this.receiverId,
+      content: content ?? this.content,
+      contentType: contentType ?? this.contentType,
+      createdAt: this.createdAt,
+      status: status ?? this.status,
+      isSent: this.isSent,
+      fileUrl: fileUrl ?? this.fileUrl,
+      fileName: fileName ?? this.fileName,
     );
   }
 }
