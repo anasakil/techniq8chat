@@ -1,0 +1,2 @@
+C:/Users/AnasAkil/Desktop/techniq8chat/android/app/.cxx/Debug/354m0r2k/x86/CMakeFiles/edit_cache.dir
+C:/Users/AnasAkil/Desktop/techniq8chat/android/app/.cxx/Debug/354m0r2k/x86/CMakeFiles/rebuild_cache.dir
