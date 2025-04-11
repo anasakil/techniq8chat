@@ -46,7 +46,11 @@ class LocalStorage {
     
     try {
       final List<dynamic> decoded = json.decode(conversationsData);
-      return decoded.map((item) => Conversation.fromJson(item)).toList();
+      final conversations = decoded.map((item) => Conversation.fromJson(item)).toList();
+      
+      // Debug log to verify data
+      print('Retrieved ${conversations.length} conversations from storage');
+      return conversations;
     } catch (e) {
       print('Error getting conversations: $e');
       return [];
@@ -58,6 +62,7 @@ class LocalStorage {
     final prefs = await SharedPreferences.getInstance();
     final data = conversations.map((c) => c.toJson()).toList();
     await prefs.setString(_conversationsKey, json.encode(data));
+    print('Saved ${conversations.length} conversations to storage');
   }
 
   // Add or update a conversation
@@ -67,8 +72,10 @@ class LocalStorage {
     
     if (index >= 0) {
       conversations[index] = conversation;
+      print('Updated existing conversation: ${conversation.id}');
     } else {
       conversations.add(conversation);
+      print('Added new conversation: ${conversation.id}');
     }
     
     // Sort conversations by latest message
@@ -102,8 +109,11 @@ class LocalStorage {
             ? conversations[index].unreadCount 
             : conversations[index].unreadCount + 1,
       );
+      
+      print('Updated conversation from message: ${conversationId}');
     } else {
       // Create a placeholder conversation until we get user details
+      print('Creating new conversation from message for: ${conversationId}');
       conversations.add(Conversation(
         id: conversationId,
         name: 'User', // Placeholder
@@ -142,6 +152,7 @@ class LocalStorage {
     if (index >= 0) {
       conversations[index] = conversations[index].copyWith(unreadCount: 0);
       await saveConversations(conversations);
+      print('Marked conversation as read: ${conversationId}');
     }
   }
 
@@ -158,13 +169,19 @@ class LocalStorage {
     final prefs = await SharedPreferences.getInstance();
     final messagesData = prefs.getString(_getMessagesKey(conversationId));
     
-    if (messagesData == null) return [];
+    if (messagesData == null) {
+      print('No messages found in storage for conversation: ${conversationId}');
+      return [];
+    }
     
     try {
       final List<dynamic> decoded = json.decode(messagesData);
-      return decoded
+      final messages = decoded
           .map((item) => Message.fromJson(item, currentUser.id))
           .toList();
+          
+      print('Retrieved ${messages.length} messages from storage for conversation: ${conversationId}');
+      return messages;
     } catch (e) {
       print('Error getting messages: $e');
       return [];
@@ -176,6 +193,7 @@ class LocalStorage {
     final prefs = await SharedPreferences.getInstance();
     final data = messages.map((m) => m.toJson()).toList();
     await prefs.setString(_getMessagesKey(conversationId), json.encode(data));
+    print('Saved ${messages.length} messages to storage for conversation: ${conversationId}');
   }
 
   // Save a single message
@@ -194,9 +212,11 @@ class LocalStorage {
     if (existingIndex >= 0) {
       // Update existing message
       messages[existingIndex] = message;
+      print('Updated existing message: ${message.id}');
     } else {
       // Add new message
       messages.add(message);
+      print('Added new message: ${message.id}');
       
       // Sort messages by timestamp
       messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -225,6 +245,7 @@ class LocalStorage {
         // Update the message
         messages[messageIndex] = messages[messageIndex].copyWith(status: status);
         await saveMessages(conversation.id, messages);
+        print('Updated message status to ${status}: ${messageId}');
         break;
       }
     }
@@ -246,6 +267,7 @@ class LocalStorage {
     if (tempIndex >= 0) {
       messages[tempIndex] = realMessage;
       await saveMessages(conversationId, messages);
+      print('Replaced temp message ${tempId} with real message: ${realMessage.id}');
       
       // Also update conversation last message if needed
       if (tempIndex == messages.length - 1) {
@@ -272,5 +294,25 @@ class LocalStorage {
     }
     
     await clearCurrentUser();
+    print('Cleared all local storage data');
+  }
+  
+  // Debug method to print all stored data
+  Future<void> debugPrintAllData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys();
+    
+    print('===== DEBUG: ALL STORED DATA =====');
+    for (final key in keys) {
+      if (key == _conversationsKey) {
+        final data = prefs.getString(key);
+        print('Conversations: $data');
+      } else if (key.startsWith(_messagesPrefix)) {
+        final convId = key.substring(_messagesPrefix.length);
+        final data = prefs.getString(key);
+        print('Messages for $convId: $data');
+      }
+    }
+    print('=================================');
   }
 }

@@ -9,7 +9,6 @@ import '../models/message.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
 import '../services/local_storage.dart';
-
 import 'login_screen.dart';
 import 'package:intl/intl.dart';
 
@@ -18,7 +17,7 @@ class ConversationsScreen extends StatefulWidget {
   _ConversationsScreenState createState() => _ConversationsScreenState();
 }
 
-class _ConversationsScreenState extends State<ConversationsScreen> {
+class _ConversationsScreenState extends State<ConversationsScreen> with WidgetsBindingObserver {
   final LocalStorage _localStorage = LocalStorage();
   late SocketService _socketService;
   List<Conversation> _conversations = [];
@@ -32,7 +31,22 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeServices();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // App came to foreground
+      _loadConversations();
+      
+      // Try to reconnect socket if needed
+      if (_socketService.isConnected == false) {
+        print('App resumed, attempting to reconnect socket');
+        _socketService.reconnect();
+      }
+    }
   }
 
   Future<void> _initializeServices() async {
@@ -50,22 +64,31 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
 
     // Initialize socket service
     _socketService = SocketService();
-    _socketService.initSocket(currentUser);
+    if (!_socketService.isConnected) {
+      _socketService.initSocket(currentUser);
+    }
 
     // Load conversations from local storage
-    _loadConversations();
+    await _loadConversations();
 
     // Set up listeners
     _setupListeners();
+    
+    // Debug: print all stored data
+    await _localStorage.debugPrintAllData();
   }
 
   Future<void> _loadConversations() async {
     try {
+      print('Loading conversations from local storage');
       final conversations = await _localStorage.getConversations();
+      
       setState(() {
         _conversations = conversations;
         _isLoading = false;
       });
+      
+      print('Loaded ${conversations.length} conversations');
     } catch (e) {
       print('Error loading conversations: $e');
       setState(() {
@@ -80,22 +103,32 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       setState(() {
         _isConnected = connected;
       });
+      
+      if (connected) {
+        // Refresh conversations when connection is established
+        _loadConversations();
+      }
     });
 
-    // Listen for new messages
-    _newMessageSubscription = _socketService.onNewMessage.listen((message) {
+    // Listen for new messages to update conversation list
+    _newMessageSubscription = _socketService.onNewMessage.listen((message) async {
+      print('New message in conversation screen: ${message.id} from ${message.senderId}');
+      
       // Refresh conversations when a new message arrives
-      _loadConversations();
+      await _loadConversations();
     });
 
     // Listen for user status changes
-    _userStatusSubscription = _socketService.onUserStatus.listen((data) {
+    _userStatusSubscription = _socketService.onUserStatus.listen((data) async {
+      print('User status update: ${data['userId']} - ${data['status']}');
+      
       // Update conversation if user status changes
-      _updateUserStatus(data['userId']!, data['status']!);
+      await _updateUserStatus(data['userId']!, data['status']!);
     });
   }
 
-  void _updateUserStatus(String userId, String status) async {
+  Future<void> _updateUserStatus(String userId, String status) async {
+    print('Updating status for user $userId to $status');
     final conversations = await _localStorage.getConversations();
     final index = conversations.indexWhere((c) => c.id == userId);
     
@@ -105,36 +138,55 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       await _localStorage.upsertConversation(updatedConversation);
       
       // Refresh conversations list
-      setState(() {
-        _conversations = conversations;
-      });
+      await _loadConversations();
     }
   }
 
   Future<void> _logout() async {
-    // Clean up listeners
-    _connectionSubscription?.cancel();
-    _newMessageSubscription?.cancel();
-    _userStatusSubscription?.cancel();
-    
-    // Disconnect socket
-    _socketService.disconnect();
-    
-    // Clear local storage
-    await _localStorage.clearAll();
-    
-    // Logout from auth service
-    final authService = Provider.of<AuthService>(context, listen: false);
-    await authService.logout();
-    
-    // Navigate to login screen
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => LoginScreen()),
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(child: CircularProgressIndicator()),
     );
+    
+    try {
+      // Clean up listeners
+      _connectionSubscription?.cancel();
+      _newMessageSubscription?.cancel();
+      _userStatusSubscription?.cancel();
+      
+      // Disconnect socket
+      _socketService.disconnect();
+      
+      // Clear local storage
+      await _localStorage.clearAll();
+      
+      // Logout from auth service
+      final authService = Provider.of<AuthService>(context, listen: false);
+      await authService.logout();
+      
+      // Remove loading dialog
+      Navigator.of(context).pop();
+      
+      // Navigate to login screen
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => LoginScreen()),
+      );
+    } catch (e) {
+      // Remove loading dialog
+      Navigator.of(context).pop();
+      
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Logout failed: $e')),
+      );
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _connectionSubscription?.cancel();
     _newMessageSubscription?.cancel();
     _userStatusSubscription?.cancel();
@@ -165,22 +217,25 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator())
-          : _conversations.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
-                  itemCount: _conversations.length,
-                  itemBuilder: (context, index) {
-                    return _buildConversationItem(_conversations[index]);
-                  },
-                ),
+      body: RefreshIndicator(
+        onRefresh: _loadConversations,
+        child: _isLoading
+            ? Center(child: CircularProgressIndicator())
+            : _conversations.isEmpty
+                ? _buildEmptyState()
+                : ListView.builder(
+                    itemCount: _conversations.length,
+                    itemBuilder: (context, index) {
+                      return _buildConversationItem(_conversations[index]);
+                    },
+                  ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => UsersListScreen()),
-          );
+          ).then((_) => _loadConversations());
         },
         child: Icon(Icons.message),
         tooltip: 'New message',
@@ -219,7 +274,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => UsersListScreen()),
-              );
+              ).then((_) => _loadConversations());
             },
             icon: Icon(Icons.add),
             label: Text('Start a conversation'),
@@ -233,10 +288,14 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     return ListTile(
       leading: CircleAvatar(
         backgroundImage: conversation.profilePicture != null && 
-                         conversation.profilePicture!.isNotEmpty
+                         conversation.profilePicture!.isNotEmpty &&
+                         !conversation.profilePicture!.contains('default-avatar')
             ? NetworkImage('http://192.168.100.76:4400/${conversation.profilePicture}')
             : null,
-        child: conversation.profilePicture == null || conversation.profilePicture!.isEmpty
+        child: (conversation.profilePicture == null || 
+                conversation.profilePicture!.isEmpty || 
+                conversation.profilePicture!.contains('default-avatar')) &&
+               conversation.name.isNotEmpty
             ? Text(conversation.name[0].toUpperCase())
             : null,
         backgroundColor: Colors.blue.shade300,
@@ -275,6 +334,9 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                 color: conversation.unreadCount > 0 
                     ? Colors.black87 
                     : Colors.grey[600],
+                fontWeight: conversation.unreadCount > 0 
+                    ? FontWeight.bold 
+                    : FontWeight.normal,
               ),
             ),
           ),

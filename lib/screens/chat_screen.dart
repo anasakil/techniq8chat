@@ -87,6 +87,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Listen for new messages
     _newMessageSubscription = _socketService.onNewMessage.listen((message) {
+      print("New message received in chat screen: ${message.id} from ${message.senderId}");
       // Only add messages for this conversation
       if (message.senderId == widget.conversationId || 
           message.receiverId == widget.conversationId) {
@@ -96,6 +97,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Listen for message status updates
     _messageStatusSubscription = _socketService.onMessageStatus.listen((data) {
+      print("Message status update in chat screen: ${data['messageId']} - ${data['status']}");
       _updateMessageStatus(data['messageId'], data['status']);
     });
 
@@ -129,6 +131,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _handleNewMessage(Message message) async {
+    print("Handling new message: ${message.id}");
+    
     // Mark message as delivered if it's from the other user
     if (!message.isSent) {
       _socketService.markMessageAsDelivered(message.id, message.senderId);
@@ -137,14 +141,17 @@ class _ChatScreenState extends State<ChatScreen> {
       _socketService.markMessageAsRead(message.id, message.senderId);
     }
 
-    // Add to messages list
-    setState(() {
-      _messages.add(message);
-      _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    });
+    // Check if message is already in the list
+    if (!_messages.any((m) => m.id == message.id)) {
+      // Add to messages list
+      setState(() {
+        _messages.add(message);
+        _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      });
 
-    // Scroll to bottom
-    _scrollToBottom();
+      // Scroll to bottom
+      _scrollToBottom();
+    }
   }
 
   void _updateMessageStatus(String messageId, String status) {
@@ -195,6 +202,8 @@ class _ChatScreenState extends State<ChatScreen> {
       content: text,
     );
 
+    print("Creating temporary message: ${tempMessage.id}");
+
     // Add to messages list immediately
     setState(() {
       _messages.add(tempMessage);
@@ -212,6 +221,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Save message to local storage
     await _localStorage.saveMessage(tempMessage);
+    
+    print("Message sent and saved locally: ${tempMessage.id}");
   }
 
   void _scrollToBottom() {
