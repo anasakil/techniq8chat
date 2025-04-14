@@ -1,3 +1,4 @@
+// models/message.dart
 class Message {
   final String id;
   final String senderId;
@@ -40,25 +41,71 @@ class Message {
     );
   }
 
-  // Create from socket data
+  // Create from socket data with improved error handling
   factory Message.fromSocketData(Map<String, dynamic> data, String currentUserId) {
-    final senderId = data['sender'] is Map ? data['sender']['_id'] : data['sender'];
-    final receiverId = data['receiver'] is Map ? data['receiver']['_id'] : data['receiver'];
-    
-    return Message(
-      id: data['_id'],
-      senderId: senderId,
-      receiverId: receiverId,
-      content: data['content'],
-      contentType: data['contentType'] ?? 'text',
-      createdAt: data['createdAt'] != null 
-          ? DateTime.parse(data['createdAt']) 
-          : DateTime.now(),
-      status: data['status'] ?? 'sent',
-      isSent: senderId == currentUserId,
-      fileUrl: data['fileUrl'],
-      fileName: data['fileName'],
-    );
+    try {
+      // Handle different possible formats for sender and receiver
+      String senderId = '';
+      if (data['sender'] is Map) {
+        senderId = data['sender']['_id'] ?? data['sender']['id'] ?? '';
+      } else {
+        senderId = data['sender'] ?? '';
+      }
+      
+      String receiverId = '';
+      if (data['receiver'] is Map) {
+        receiverId = data['receiver']['_id'] ?? data['receiver']['id'] ?? '';
+      } else {
+        receiverId = data['receiver'] ?? '';
+      }
+      
+      // Get content - may need to decrypt if it's encrypted
+      String content = data['content'] ?? '';
+      
+      // Handle different date formats
+      DateTime createdAt;
+      if (data['createdAt'] != null) {
+        try {
+          createdAt = DateTime.parse(data['createdAt']);
+        } catch (e) {
+          print('Error parsing date: ${data['createdAt']}. Using current time.');
+          createdAt = DateTime.now();
+        }
+      } else {
+        createdAt = DateTime.now();
+      }
+      
+      // Determine if message is sent by current user
+      final isSent = senderId == currentUserId;
+      
+      return Message(
+        id: data['_id'] ?? data['id'] ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
+        senderId: senderId,
+        receiverId: receiverId,
+        content: content,
+        contentType: data['contentType'] ?? 'text',
+        createdAt: createdAt,
+        status: data['status'] ?? (isSent ? 'sent' : 'delivered'),
+        isSent: isSent,
+        fileUrl: data['fileUrl'],
+        fileName: data['fileName'],
+      );
+    } catch (e) {
+      print('Error creating Message from socket data: $e');
+      print('Raw data: $data');
+      
+      // Fallback to creating a basic message
+      return Message(
+        id: 'error_${DateTime.now().millisecondsSinceEpoch}',
+        senderId: data['sender']?.toString() ?? '',
+        receiverId: data['receiver']?.toString() ?? '',
+        content: data['content']?.toString() ?? 'Message could not be displayed',
+        contentType: 'text',
+        createdAt: DateTime.now(),
+        status: 'sent',
+        isSent: data['sender'] == currentUserId,
+      );
+    }
   }
 
   // Create a temporary message for optimistic UI updates

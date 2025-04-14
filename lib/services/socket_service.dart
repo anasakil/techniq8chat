@@ -4,55 +4,56 @@ import 'dart:convert';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:techniq8chat/models/user_model.dart';
 import '../models/message.dart';
-import 'local_storage.dart';
+import '../models/conversation.dart'; // Add this import
+import 'hive_storage.dart';
 
 class SocketService {
   // Socket connection
   IO.Socket? _socket;
   bool isConnected = false;
   final String serverUrl = 'http://192.168.100.76:4400';
-  
+
   // Service dependencies
-  final LocalStorage localStorage = LocalStorage();
-  
+  final HiveStorage hiveStorage = HiveStorage();
+
   // Current user
   User? currentUser;
-  
+
   // Stream controllers
   final _onConnected = StreamController<bool>.broadcast();
   final _onNewMessage = StreamController<Message>.broadcast();
   final _onMessageStatus = StreamController<Map<String, dynamic>>.broadcast();
   final _onUserStatus = StreamController<Map<String, String>>.broadcast();
   final _onTyping = StreamController<String>.broadcast();
-  
+
   // Streams
   Stream<bool> get onConnected => _onConnected.stream;
   Stream<Message> get onNewMessage => _onNewMessage.stream;
   Stream<Map<String, dynamic>> get onMessageStatus => _onMessageStatus.stream;
   Stream<Map<String, String>> get onUserStatus => _onUserStatus.stream;
   Stream<String> get onTyping => _onTyping.stream;
-  
+
   // Message queue for when socket is disconnected
   final List<Map<String, dynamic>> _messageQueue = [];
-  
+
   // Reconnection timer
   Timer? _reconnectTimer;
-  
+
   // Singleton pattern
   static final SocketService _instance = SocketService._internal();
-  
+
   factory SocketService() {
     return _instance;
   }
-  
+
   SocketService._internal();
 
   // Initialize socket connection
   void initSocket(User user) {
     currentUser = user;
-    
+
     print('Initializing socket with token: ${user.token.substring(0, 10)}...');
-    
+
     _socket = IO.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
@@ -64,11 +65,11 @@ class SocketService {
     });
 
     _setupSocketListeners();
-    
+
     // Start a periodic check for connection
     _startConnectionCheck();
   }
-  
+
   void _startConnectionCheck() {
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer.periodic(Duration(seconds: 5), (timer) {
@@ -85,13 +86,13 @@ class SocketService {
       print('Socket connected');
       isConnected = true;
       _onConnected.add(true);
-      
+
       // Register user as connected
       if (currentUser != null) {
         print('Emitting user_connected with ID: ${currentUser!.id}');
         _socket?.emit('user_connected', currentUser!.id);
       }
-      
+
       // Process any queued messages
       _processMessageQueue();
     });
@@ -112,18 +113,21 @@ class SocketService {
     _socket?.on('new_message', (data) async {
       print('New message received: $data');
       if (currentUser == null) return;
-      
+
       try {
         // Create message object
         final message = Message.fromSocketData(data, currentUser!.id);
-        
-        // Save to local storage
-        print('Saving message to local storage: ${message.id}');
-        await localStorage.saveMessage(message);
-        
+
+        // Save to Hive storage
+        print('Saving message to Hive storage: ${message.id}');
+        await hiveStorage.saveMessage(message);
+
+        // Explicitly update the conversation with this message
+        await _updateConversation(message);
+
         // Broadcast the new message
         _onNewMessage.add(message);
-        
+
         // Mark as delivered
         print('Marking message as delivered: ${message.id}');
         markMessageAsDelivered(message.id, message.senderId);
@@ -136,11 +140,11 @@ class SocketService {
     _socket?.on('message_delivered', (data) async {
       print('Message delivered: $data');
       final messageId = data['messageId'];
-      
+
       try {
-        // Update message status in local storage
-        await localStorage.updateMessageStatus(messageId, 'delivered');
-        
+        // Update message status in Hive storage
+        await hiveStorage.updateMessageStatus(messageId, 'delivered');
+
         // Broadcast status update
         _onMessageStatus.add({
           'messageId': messageId,
@@ -154,11 +158,11 @@ class SocketService {
     _socket?.on('message_pending', (data) async {
       print('Message pending: $data');
       final messageId = data['messageId'];
-      
+
       try {
-        // Update message status in local storage
-        await localStorage.updateMessageStatus(messageId, 'pending');
-        
+        // Update message status in Hive storage
+        await hiveStorage.updateMessageStatus(messageId, 'pending');
+
         // Broadcast status update
         _onMessageStatus.add({
           'messageId': messageId,
@@ -173,11 +177,11 @@ class SocketService {
       print('Message status update: $data');
       final messageId = data['messageId'];
       final status = data['status'];
-      
+
       try {
-        // Update message status in local storage
-        await localStorage.updateMessageStatus(messageId, status);
-        
+        // Update message status in Hive storage
+        await hiveStorage.updateMessageStatus(messageId, status);
+
         // Broadcast status update
         _onMessageStatus.add({
           'messageId': messageId,
@@ -189,11 +193,24 @@ class SocketService {
     });
 
     // Listen for user status changes
-    _socket?.on('user_status', (data) {
+    _socket?.on('user_status', (data) async {
       print('User status update: $data');
       final userId = data['userId'];
       final status = data['status'];
-      
+
+      try {
+        // Update conversation status in storage
+        final conversations = await hiveStorage.getConversations();
+        final conversationIndex = conversations.indexWhere((c) => c.id == userId);
+        
+        if (conversationIndex >= 0) {
+          final updatedConversation = conversations[conversationIndex].copyWith(status: status);
+          await hiveStorage.upsertConversation(updatedConversation);
+        }
+      } catch (e) {
+        print('Error updating conversation status: $e');
+      }
+
       // Broadcast user status update
       _onUserStatus.add({
         'userId': userId,
@@ -213,16 +230,26 @@ class SocketService {
     _socket?.on('conversation_history', (data) async {
       print('Received conversation history: $data');
       if (currentUser == null) return;
-      
+
       try {
         if (data['messages'] != null) {
           final messages = (data['messages'] as List).map((msg) {
             return Message.fromSocketData(msg, currentUser!.id);
           }).toList();
-          
-          // Save messages to local storage
+
+          // Debug print
+          print('Conversation History Messages:');
+          for (var msg in messages) {
+            print(
+                'Message ID: ${msg.id}, Sender: ${msg.senderId}, Receiver: ${msg.receiverId}, Content: ${msg.content}');
+          }
+
+          // Save messages to Hive storage
           for (final message in messages) {
-            await localStorage.saveMessage(message);
+            await hiveStorage.saveMessage(message);
+            
+            // Also update conversation for each message
+            await _updateConversation(message);
           }
         }
       } catch (e) {
@@ -231,11 +258,65 @@ class SocketService {
     });
   }
 
-  // Send a message
-  Future<void> sendMessage(String receiverId, String content, {String? tempId}) async {
-    print('Sending message to $receiverId: $content (tempId: $tempId)');
+  // NEW METHOD: Update conversation when a message is processed
+  Future<void> _updateConversation(Message message) async {
+    if (currentUser == null) return;
     
-    // Store message in local storage first (optimistic update)
+    try {
+      // Determine the other user ID (conversation partner)
+      final conversationId = message.isSent ? message.receiverId : message.senderId;
+      
+      print('Updating conversation for ID: $conversationId with message: "${message.content}"');
+      
+      // Get existing conversation if any
+      final conversations = await hiveStorage.getConversations();
+      final existingConversationIndex = conversations.indexWhere((c) => c.id == conversationId);
+      
+      if (existingConversationIndex >= 0) {
+        // Update existing conversation
+        final existingConversation = conversations[existingConversationIndex];
+        
+        // Calculate unread count
+        int newUnreadCount = existingConversation.unreadCount;
+        if (!message.isSent && message.senderId != currentUser!.id) {
+          newUnreadCount += 1;
+        }
+        
+        // Create updated conversation
+        final updatedConversation = existingConversation.copyWith(
+          lastMessage: message.content,
+          lastMessageTime: message.createdAt,
+          unreadCount: newUnreadCount,
+        );
+        
+        // Save updated conversation
+        await hiveStorage.upsertConversation(updatedConversation);
+        print('Updated existing conversation with ID: $conversationId, lastMessage: "${message.content}"');
+      } else {
+        // Create new conversation
+        final newConversation = Conversation(
+          id: conversationId,
+          name: message.isSent ? conversationId : message.senderId, // Placeholder
+          lastMessage: message.content,
+          lastMessageTime: message.createdAt,
+          status: 'offline',
+          unreadCount: message.isSent ? 0 : 1,
+        );
+        
+        await hiveStorage.upsertConversation(newConversation);
+        print('Created new conversation with ID: $conversationId, lastMessage: "${message.content}"');
+      }
+    } catch (e) {
+      print('Error updating conversation for message: $e');
+    }
+  }
+
+  // Send a message
+  Future<void> sendMessage(String receiverId, String content,
+      {String? tempId}) async {
+    print('Sending message to $receiverId: $content (tempId: $tempId)');
+
+    // Store message in Hive storage first (optimistic update)
     if (tempId != null && currentUser != null) {
       final tempMessage = Message(
         id: tempId,
@@ -247,10 +328,13 @@ class SocketService {
         status: 'sending',
         isSent: true,
       );
+
+      await hiveStorage.saveMessage(tempMessage);
       
-      await localStorage.saveMessage(tempMessage);
+      // Also update conversation for this message
+      await _updateConversation(tempMessage);
     }
-    
+
     if (!isConnected) {
       print('Socket not connected, queueing message for later');
       // Queue message for later
@@ -259,23 +343,23 @@ class SocketService {
         'message': content,
         'messageId': tempId,
       });
-      
+
       // Try to reconnect the socket
       _socket?.connect();
       return;
     }
-    
+
     // Send directly through socket
     final messageData = {
       'receiverId': receiverId,
       'message': content,
     };
-    
+
     // Add temp ID if available
     if (tempId != null) {
       messageData['messageId'] = tempId;
     }
-    
+
     print('Emitting send_message event: $messageData');
     _socket?.emit('send_message', messageData);
   }
@@ -283,13 +367,13 @@ class SocketService {
   // Process queued messages when socket reconnects
   void _processMessageQueue() {
     if (!isConnected || _messageQueue.isEmpty) return;
-    
+
     print('Processing ${_messageQueue.length} queued messages');
-    
+
     // Create a copy of the queue so we can safely modify the original
     final List<Map<String, dynamic>> processedQueue = List.from(_messageQueue);
     _messageQueue.clear();
-    
+
     for (final messageData in processedQueue) {
       print('Processing queued message: $messageData');
       _socket?.emit('send_message', messageData);
@@ -302,8 +386,9 @@ class SocketService {
       print('Cannot mark message as delivered: socket disconnected');
       return;
     }
-    
-    print('Marking message as delivered - messageId: $messageId, senderId: $senderId');
+
+    print(
+        'Marking message as delivered - messageId: $messageId, senderId: $senderId');
     _socket?.emit('message_status_update', {
       'messageId': messageId,
       'status': 'delivered',
@@ -317,8 +402,9 @@ class SocketService {
       print('Cannot mark message as read: socket disconnected');
       return;
     }
-    
-    print('Marking message as read - messageId: $messageId, senderId: $senderId');
+
+    print(
+        'Marking message as read - messageId: $messageId, senderId: $senderId');
     _socket?.emit('message_read', {
       'messageId': messageId,
       'senderId': senderId,
@@ -328,7 +414,7 @@ class SocketService {
   // Send typing indicator
   void sendTyping(String receiverId) {
     if (!isConnected) return;
-    
+
     _socket?.emit('typing', {
       'receiverId': receiverId,
     });
@@ -342,7 +428,7 @@ class SocketService {
       _socket?.connect();
       return;
     }
-    
+
     print('Getting conversation history between $userId and $otherUserId');
     _socket?.emit('get_conversation', {
       'userId': userId,

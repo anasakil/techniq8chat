@@ -1,12 +1,20 @@
 // main.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'services/auth_service.dart';
+import 'services/hive_storage.dart';
 import 'screens/login_screen.dart';
 import 'screens/conversations_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
+void main() async {
+  // Ensure Flutter is initialized
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Hive
+  await HiveStorage.initialize();
+  
   runApp(MyApp());
 }
 
@@ -16,6 +24,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
+        Provider<HiveStorage>(create: (_) => HiveStorage()),
       ],
       child: MaterialApp(
         title: 'Chat App',
@@ -110,4 +119,3 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 }
-

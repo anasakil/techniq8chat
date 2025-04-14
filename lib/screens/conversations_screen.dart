@@ -8,7 +8,7 @@ import '../models/conversation.dart';
 import '../models/message.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
-import '../services/local_storage.dart';
+import '../services/hive_storage.dart'; 
 import 'login_screen.dart';
 import 'package:intl/intl.dart';
 
@@ -18,7 +18,7 @@ class ConversationsScreen extends StatefulWidget {
 }
 
 class _ConversationsScreenState extends State<ConversationsScreen> with WidgetsBindingObserver {
-  final LocalStorage _localStorage = LocalStorage();
+  late HiveStorage _hiveStorage; 
   late SocketService _socketService;
   List<Conversation> _conversations = [];
   bool _isLoading = true;
@@ -31,6 +31,8 @@ class _ConversationsScreenState extends State<ConversationsScreen> with WidgetsB
   @override
   void initState() {
     super.initState();
+    // Get HiveStorage instance from provider
+    _hiveStorage = Provider.of<HiveStorage>(context, listen: false);
     WidgetsBinding.instance.addObserver(this);
     _initializeServices();
   }
@@ -68,20 +70,20 @@ class _ConversationsScreenState extends State<ConversationsScreen> with WidgetsB
       _socketService.initSocket(currentUser);
     }
 
-    // Load conversations from local storage
+    // Load conversations from Hive storage
     await _loadConversations();
 
     // Set up listeners
     _setupListeners();
     
     // Debug: print all stored data
-    await _localStorage.debugPrintAllData();
+    _hiveStorage.debugPrintAllData();
   }
 
   Future<void> _loadConversations() async {
     try {
-      print('Loading conversations from local storage');
-      final conversations = await _localStorage.getConversations();
+      print('Loading conversations from Hive storage');
+      final conversations = await _hiveStorage.getConversations();
       
       setState(() {
         _conversations = conversations;
@@ -114,8 +116,17 @@ class _ConversationsScreenState extends State<ConversationsScreen> with WidgetsB
     _newMessageSubscription = _socketService.onNewMessage.listen((message) async {
       print('New message in conversation screen: ${message.id} from ${message.senderId}');
       
-      // Refresh conversations when a new message arrives
+      // Update the conversation with the new message
+      // This will call HiveStorage.updateConversationFromMessage internally
+      await _updateConversationWithNewMessage(message);
+      
+      // Then refresh the conversations list
       await _loadConversations();
+      
+      // Force a UI refresh
+      if (mounted) {
+        setState(() {});
+      }
     });
 
     // Listen for user status changes
@@ -127,15 +138,33 @@ class _ConversationsScreenState extends State<ConversationsScreen> with WidgetsB
     });
   }
 
+  // Add this method to handle updating conversation data when a new message is received
+  // Updated _updateConversationWithNewMessage method for conversations_screen.dart
+Future<void> _updateConversationWithNewMessage(Message message) async {
+  print('In ConversationsScreen: Updating conversation with message ID: ${message.id}');
+
+  try {
+    // Let HiveStorage handle the update
+    await _hiveStorage.updateConversationFromMessage(message);
+    
+    // Force reload conversations to ensure UI is updated
+    await _loadConversations();
+    
+    // Log success
+    print('Successfully updated conversation for message: ${message.id}');
+  } catch (e) {
+    print('Error updating conversation with message: $e');
+  }
+}
   Future<void> _updateUserStatus(String userId, String status) async {
     print('Updating status for user $userId to $status');
-    final conversations = await _localStorage.getConversations();
+    final conversations = await _hiveStorage.getConversations();
     final index = conversations.indexWhere((c) => c.id == userId);
     
     if (index >= 0) {
       // Update conversation status
       final updatedConversation = conversations[index].copyWith(status: status);
-      await _localStorage.upsertConversation(updatedConversation);
+      await _hiveStorage.upsertConversation(updatedConversation);
       
       // Refresh conversations list
       await _loadConversations();
@@ -159,8 +188,8 @@ class _ConversationsScreenState extends State<ConversationsScreen> with WidgetsB
       // Disconnect socket
       _socketService.disconnect();
       
-      // Clear local storage
-      await _localStorage.clearAll();
+      // Clear Hive storage
+      await _hiveStorage.clearAll();
       
       // Logout from auth service
       final authService = Provider.of<AuthService>(context, listen: false);
@@ -193,6 +222,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> with WidgetsB
     super.dispose();
   }
 
+  // Rest of the widget build methods remain the same
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -284,97 +314,113 @@ class _ConversationsScreenState extends State<ConversationsScreen> with WidgetsB
     );
   }
 
-  Widget _buildConversationItem(Conversation conversation) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundImage: conversation.profilePicture != null && 
-                         conversation.profilePicture!.isNotEmpty &&
-                         !conversation.profilePicture!.contains('default-avatar')
-            ? NetworkImage('http://192.168.100.76:4400/${conversation.profilePicture}')
-            : null,
-        child: (conversation.profilePicture == null || 
-                conversation.profilePicture!.isEmpty || 
-                conversation.profilePicture!.contains('default-avatar')) &&
-               conversation.name.isNotEmpty
-            ? Text(conversation.name[0].toUpperCase())
-            : null,
-        backgroundColor: Colors.blue.shade300,
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              conversation.name,
-              style: TextStyle(
-                fontWeight: conversation.unreadCount > 0 
-                    ? FontWeight.bold 
-                    : FontWeight.normal,
-              ),
-              overflow: TextOverflow.ellipsis,
+ // Updated _buildConversationItem method for conversations_screen.dart
+Widget _buildConversationItem(Conversation conversation) {
+  return ListTile(
+    leading: CircleAvatar(
+      backgroundImage: conversation.profilePicture != null && 
+                       conversation.profilePicture!.isNotEmpty &&
+                       !conversation.profilePicture!.contains('default-avatar')
+          ? NetworkImage('http://192.168.100.76:4400/${conversation.profilePicture}')
+          : null,
+      child: (conversation.profilePicture == null || 
+              conversation.profilePicture!.isEmpty || 
+              conversation.profilePicture!.contains('default-avatar')) &&
+             conversation.name.isNotEmpty
+          ? Text(conversation.name[0].toUpperCase())
+          : null,
+      backgroundColor: Colors.blue.shade300,
+    ),
+    title: Row(
+      children: [
+        Expanded(
+          child: Text(
+            conversation.name,
+            style: TextStyle(
+              fontWeight: conversation.unreadCount > 0 
+                  ? FontWeight.bold 
+                  : FontWeight.normal,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (conversation.lastMessageTime != null)
+          Text(
+            _formatTime(conversation.lastMessageTime!),
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
             ),
           ),
-          if (conversation.lastMessageTime != null)
-            Text(
-              _formatTime(conversation.lastMessageTime!),
+      ],
+    ),
+    subtitle: Row(
+      children: [
+        Expanded(
+          child: Text(
+            conversation.lastMessage ?? 'No messages yet',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: conversation.unreadCount > 0 
+                  ? Colors.black87 
+                  : Colors.grey[600],
+              fontWeight: conversation.unreadCount > 0 
+                  ? FontWeight.bold 
+                  : FontWeight.normal,
+            ),
+          ),
+        ),
+        _buildStatusIndicator(conversation.status),
+        SizedBox(width: 4),
+        if (conversation.unreadCount > 0)
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              conversation.unreadCount.toString(),
               style: TextStyle(
+                color: Colors.white,
                 fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            ),
-        ],
-      ),
-      subtitle: Row(
-        children: [
-          Expanded(
-            child: Text(
-              conversation.lastMessage ?? 'No messages yet',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: conversation.unreadCount > 0 
-                    ? Colors.black87 
-                    : Colors.grey[600],
-                fontWeight: conversation.unreadCount > 0 
-                    ? FontWeight.bold 
-                    : FontWeight.normal,
               ),
             ),
           ),
-          _buildStatusIndicator(conversation.status),
-          SizedBox(width: 4),
-          if (conversation.unreadCount > 0)
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                conversation.unreadCount.toString(),
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-        ],
-      ),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatScreen(
-              conversationId: conversation.id,
-              conversationName: conversation.name,
-            ),
+      ],
+    ),
+    onTap: () async {
+      // Mark conversation as read before navigating
+      if (conversation.unreadCount > 0) {
+        await _hiveStorage.markConversationAsRead(conversation.id);
+        
+        // Also refresh the local list to update the UI
+        final updatedConversation = conversation.copyWith(unreadCount: 0);
+        final index = _conversations.indexWhere((c) => c.id == conversation.id);
+        
+        if (index >= 0) {
+          setState(() {
+            _conversations[index] = updatedConversation;
+          });
+        }
+      }
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatScreen(
+            conversationId: conversation.id,
+            conversationName: conversation.name,
           ),
-        ).then((_) {
-          // Refresh the conversations when returning from chat screen
-          _loadConversations();
-        });
-      },
-    );
-  }
+        ),
+      ).then((_) {
+        // Refresh the conversations when returning from chat screen
+        _loadConversations();
+      });
+    },
+  );
+}
 
   Widget _buildStatusIndicator(String status) {
     Color color;

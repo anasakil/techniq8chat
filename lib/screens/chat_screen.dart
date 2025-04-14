@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:techniq8chat/models/user_model.dart';
 import '../models/message.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
-import '../services/local_storage.dart';
+import '../services/hive_storage.dart';
+import 'dart:math' as Math;
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -24,7 +26,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final LocalStorage _localStorage = LocalStorage();
+  late HiveStorage _hiveStorage;
   
   List<Message> _messages = [];
   bool _isLoading = true;
@@ -41,41 +43,57 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    // Get HiveStorage instance from provider
+    _hiveStorage = Provider.of<HiveStorage>(context, listen: false);
     _initializeServices();
+    _markConversationAsRead();
+
   }
 
-  Future<void> _initializeServices() async {
-    // Get the current user
-    final authService = Provider.of<AuthService>(context, listen: false);
-    final currentUser = authService.currentUser;
-    
-    if (currentUser == null) {
-      // Handle case where user is not logged in
-      Navigator.of(context).pop();
-      return;
-    }
 
-    // Set up socket service
-    _socketService = SocketService();
-    if (!_socketService.isConnected) {
-      _socketService.initSocket(currentUser);
-    }
-
-    // Set up listeners
-    _setupListeners();
-
-    // Load messages
-    await _loadMessages();
-
-    // Mark conversation as read
-    await _localStorage.markConversationAsRead(widget.conversationId);
-
-    // Request conversation history from server
-    _socketService.getConversationHistory(
-      currentUser.id,
-      widget.conversationId,
-    );
+  Future<void> _markConversationAsRead() async {
+  try {
+    // Mark conversation as read in Hive storage
+    await _hiveStorage.markConversationAsRead(widget.conversationId);
+    print('Marked conversation ${widget.conversationId} as read on screen load');
+  } catch (e) {
+    print('Error marking conversation as read: $e');
   }
+}
+Future<void> _initializeServices() async {
+  // Get the current user
+  final authService = Provider.of<AuthService>(context, listen: false);
+  final currentUser = authService.currentUser;
+  
+  if (currentUser == null) {
+    // Handle case where user is not logged in
+    Navigator.of(context).pop();
+    return;
+  }
+
+  print("Current user ID in Chat Screen: ${currentUser.id}");
+
+  // Set up socket service
+  _socketService = SocketService();
+  if (!_socketService.isConnected) {
+    _socketService.initSocket(currentUser);
+  }
+
+  // Set up listeners
+  _setupListeners();
+
+  // Load messages - pass the current user directly to avoid timing issues
+  await _loadMessages(currentUser);
+
+  // Mark conversation as read
+  await _hiveStorage.markConversationAsRead(widget.conversationId);
+
+  // Request conversation history from server
+  _socketService.getConversationHistory(
+    currentUser.id,
+    widget.conversationId,
+  );
+}
 
   void _setupListeners() {
     // Listen for connection status
@@ -109,50 +127,173 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _loadMessages() async {
-    try {
-      final messages = await _localStorage.getMessages(widget.conversationId);
-      
+ Future<void> _loadMessages([User? directUser]) async {
+  try {
+    print("LOADING MESSAGES FOR CONVERSATION: ${widget.conversationId}");
+    
+    // Get the current user to help with debugging
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final currentUser = directUser ?? authService.currentUser;
+    
+    if (currentUser == null) {
+      print("ERROR: No current user available for message loading");
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+    
+    print("Current user ID for message loading: ${currentUser.id}");
+    
+    // Print conversation details for debug
+    _hiveStorage.debugPrintAllData();
+    
+    // Pass the current user directly to getMessages to avoid timing issues
+    final messages = await _hiveStorage.getMessages(
+      widget.conversationId, 
+      directUser: currentUser
+    );
+    
+    // Debug print to verify messages
+    print('Loaded ${messages.length} messages for UI');
+    for (var i = 0; i < Math.min(5, messages.length); i++) {
+      var msg = messages[i];
+      print('UI Message ${i+1}: ${msg.id} - ${msg.content}');
+    }
+    
+    if (mounted) {
       setState(() {
         _messages = messages;
         _isLoading = false;
       });
       
-      // Scroll to bottom after loading
+      // Scroll to bottom after messages are loaded
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToBottom();
       });
-    } catch (e) {
-      print('Error loading messages: $e');
-      setState(() {
-        _isLoading = false;
-      });
     }
+  } catch (e) {
+    print('Error loading messages: $e');
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
 
-  void _handleNewMessage(Message message) async {
-    print("Handling new message: ${message.id}");
+
+
+  // Force refresh messages - useful for debugging
+  Future<void> _forceRefreshMessages() async {
+  print('Force refreshing messages for conversation: ${widget.conversationId}');
+  
+  try {
+    // Get current user
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final currentUser = authService.currentUser;
     
-    // Mark message as delivered if it's from the other user
-    if (!message.isSent) {
-      _socketService.markMessageAsDelivered(message.id, message.senderId);
+    if (currentUser == null) {
+      print("ERROR: No current user available for force refresh");
+      return;
+    }
+    
+    // Print all stored data to help debug
+    _hiveStorage.debugPrintAllData();
+    
+    // Pass current user directly
+    final messages = await _hiveStorage.getMessages(
+      widget.conversationId,
+      directUser: currentUser
+    );
+    
+    print('Force refresh found ${messages.length} messages');
+    if (messages.isNotEmpty) {
+      print('First message: ${messages.first.content}, Last message: ${messages.last.content}');
+    }
+    
+    // Manual loading of messages if the standard method fails
+    if (messages.isEmpty) {
+      // Try to manually get conversation history again
+      _socketService.getConversationHistory(
+        currentUser.id,
+        widget.conversationId,
+      );
       
-      // Also mark as read since we're in the chat
-      _socketService.markMessageAsRead(message.id, message.senderId);
+      print("Manual request for conversation history sent");
     }
-
-    // Check if message is already in the list
-    if (!_messages.any((m) => m.id == message.id)) {
-      // Add to messages list
-      setState(() {
-        _messages.add(message);
-        _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-      });
-
-      // Scroll to bottom
+    
+    // Update the UI regardless of whether we found messages
+    setState(() {
+      _messages = messages;
+      _isLoading = false;
+    });
+    
+    // Make sure to scroll to bottom after setting state
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottom();
-    }
+    });
+  } catch (e) {
+    print('Error in force refresh: $e');
   }
+}
+
+  // Updated _handleNewMessage method for chat_screen.dart
+void _handleNewMessage(Message message) async {
+  print("Handling new message: ${message.id}, content: ${message.content}");
+  
+  // Get current user for consistent handling
+  final authService = Provider.of<AuthService>(context, listen: false);
+  final currentUser = authService.currentUser;
+  
+  if (currentUser == null) {
+    print("ERROR: No current user available when handling new message");
+    return;
+  }
+  
+  // Check if message is for this conversation
+  final isRelevantMessage = 
+    (message.senderId == widget.conversationId && message.receiverId == currentUser.id) ||
+    (message.receiverId == widget.conversationId && message.senderId == currentUser.id);
+  
+  if (!isRelevantMessage) {
+    print("Message not relevant to this conversation");
+    return;
+  }
+  
+  // Mark message as delivered if it's from the other user
+  if (!message.isSent) {
+    _socketService.markMessageAsDelivered(message.id, message.senderId);
+    
+    // Also mark as read since we're in the chat
+    _socketService.markMessageAsRead(message.id, message.senderId);
+  }
+
+  // Check if message is already in the list
+  final existingIndex = _messages.indexWhere((m) => m.id == message.id);
+  if (existingIndex == -1) {
+    // Add to messages list
+    setState(() {
+      _messages.add(message);
+      _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    });
+
+    // Save message to storage
+    await _hiveStorage.saveMessage(message);
+    
+    // Explicitly update the conversation for this message
+    await _hiveStorage.updateConversationFromMessage(message);
+
+    print("Added message to UI and saved to storage: ${message.id}");
+    
+    // Scroll to bottom
+    _scrollToBottom();
+  } else {
+    print("Message ${message.id} already in the list, not adding again");
+    // Update the message in case the status changed
+    setState(() {
+      _messages[existingIndex] = message;
+    });
+  }
+}
 
   void _updateMessageStatus(String messageId, String status) {
     setState(() {
@@ -184,46 +325,51 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _sendMessage() async {
-    final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+  final text = _messageController.text.trim();
+  if (text.isEmpty) return;
 
-    final authService = Provider.of<AuthService>(context, listen: false);
-    final currentUser = authService.currentUser;
-    
-    if (currentUser == null) return;
-
-    // Clear input field
-    _messageController.clear();
-
-    // Create a temporary message
-    final tempMessage = Message.createTemp(
-      senderId: currentUser.id,
-      receiverId: widget.conversationId,
-      content: text,
-    );
-
-    print("Creating temporary message: ${tempMessage.id}");
-
-    // Add to messages list immediately
-    setState(() {
-      _messages.add(tempMessage);
-    });
-
-    // Scroll to bottom
-    _scrollToBottom();
-
-    // Send through socket
-    _socketService.sendMessage(
-      widget.conversationId,
-      text,
-      tempId: tempMessage.id,
-    );
-
-    // Save message to local storage
-    await _localStorage.saveMessage(tempMessage);
-    
-    print("Message sent and saved locally: ${tempMessage.id}");
+  final authService = Provider.of<AuthService>(context, listen: false);
+  final currentUser = authService.currentUser;
+  
+  if (currentUser == null) {
+    print("ERROR: No current user available when sending message");
+    return;
   }
+
+  print("Sending message to ${widget.conversationId}: $text");
+  
+  // Clear input field
+  _messageController.clear();
+
+  // Create a temporary message
+  final tempMessage = Message.createTemp(
+    senderId: currentUser.id,
+    receiverId: widget.conversationId,
+    content: text,
+  );
+
+  print("Creating temporary message: ${tempMessage.id}, content: $text");
+
+  // Add to messages list immediately
+  setState(() {
+    _messages.add(tempMessage);
+  });
+
+  // Scroll to bottom
+  _scrollToBottom();
+
+  // Send through socket
+  _socketService.sendMessage(
+    widget.conversationId,
+    text,
+    tempId: tempMessage.id,
+  );
+
+  // Save message to storage
+  await _hiveStorage.saveMessage(tempMessage);
+  
+  print("Message sent and saved locally: ${tempMessage.id}");
+}
 
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
@@ -265,6 +411,11 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
+          // Add refresh button for debugging
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: _forceRefreshMessages,
+          ),
           Container(
             margin: EdgeInsets.only(right: 16),
             width: 12,
@@ -327,6 +478,12 @@ class _ChatScreenState extends State<ChatScreen> {
           Text(
             'Start the conversation with a message',
             style: TextStyle(color: Colors.grey[600]),
+          ),
+          // Add debug button
+          SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _forceRefreshMessages,
+            child: Text("Refresh Messages"),
           ),
         ],
       ),

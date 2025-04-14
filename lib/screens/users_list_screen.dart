@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:techniq8chat/models/user_model.dart';
 import '../models/conversation.dart';
 import '../services/auth_service.dart';
-import '../services/local_storage.dart';
+import '../services/hive_storage.dart'; // Changed from local_storage
 import '../widgets/user_item.dart';
 import 'chat_screen.dart';
 import 'dart:convert';
@@ -20,11 +20,13 @@ class _UsersListScreenState extends State<UsersListScreen> {
   bool _isLoading = true;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
-  final LocalStorage _localStorage = LocalStorage();
+  late HiveStorage _hiveStorage; // Changed from _localStorage
 
   @override
   void initState() {
     super.initState();
+    // Get HiveStorage instance from provider
+    _hiveStorage = Provider.of<HiveStorage>(context, listen: false);
     _loadUsers();
   }
 
@@ -118,7 +120,7 @@ class _UsersListScreenState extends State<UsersListScreen> {
   Future<void> _startConversation(User user) async {
     try {
       // Check if conversation already exists
-      final conversations = await _localStorage.getConversations();
+      final conversations = await _hiveStorage.getConversations();
       final existingConversation = conversations.firstWhere(
         (c) => c.id == user.id,
         orElse: () => Conversation(
@@ -129,8 +131,8 @@ class _UsersListScreenState extends State<UsersListScreen> {
         ),
       );
       
-      // Save/update conversation
-      await _localStorage.upsertConversation(existingConversation);
+      // Save/update conversation in Hive
+      await _hiveStorage.upsertConversation(existingConversation);
       
       // Navigate to chat screen
       Navigator.pushReplacement(

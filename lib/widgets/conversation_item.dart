@@ -19,25 +19,24 @@ class ConversationItem extends StatelessWidget {
       leading: _buildAvatar(),
       title: Row(
         children: [
-          Expanded(
-            child: Text(
-              conversation.name,
-              style: TextStyle(
-                fontWeight: conversation.unreadCount > 0 
-                    ? FontWeight.bold 
-                    : FontWeight.normal,
-              ),
-              overflow: TextOverflow.ellipsis,
+           Expanded(
+          child: Text(
+            // Make sure we're checking if lastMessage is null or empty
+            (conversation.lastMessage != null && conversation.lastMessage!.isNotEmpty)
+                ? conversation.lastMessage!
+                : 'No messages yet',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: conversation.unreadCount > 0 
+                  ? Colors.black87 
+                  : Colors.grey[600],
+              fontWeight: conversation.unreadCount > 0 
+                  ? FontWeight.bold 
+                  : FontWeight.normal,
             ),
           ),
-          if (conversation.lastMessageTime != null)
-            Text(
-              _formatTime(conversation.lastMessageTime!),
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            ),
+        ),
         ],
       ),
       subtitle: Row(

@@ -1,14 +1,36 @@
+// models/conversation.dart
+import 'package:hive/hive.dart';
 import 'package:techniq8chat/models/user_model.dart';
 
+part 'conversation.g.dart';
+
+@HiveType(typeId: 1)
 class Conversation {
+  @HiveField(0)
   final String id; // User ID for the other person
+  
+  @HiveField(1)
   final String name; // Username of the other person
+  
+  @HiveField(2)
   final String? lastMessage;
+  
+  @HiveField(3)
   final DateTime? lastMessageTime;
+  
+  @HiveField(4)
   final String? profilePicture;
+  
+  @HiveField(5)
   final String status;
+  
+  @HiveField(6)
   final int unreadCount;
+  
+  @HiveField(7)
   final bool isGroup;
+  
+  @HiveField(8)
   final List<String> participants; // Only used for group chats
 
   Conversation({
