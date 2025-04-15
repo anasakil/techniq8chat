@@ -139,7 +139,8 @@ class HiveStorage {
 
  // This is an enhanced version of the updateConversationFromMessage method
 // to be added to your services/hive_storage.dart file
-// Updated method to add to hive_storage.dart
+// In hive_storage.dart, update the updateConversationFromMessage method:
+// In hive_storage.dart, update the updateConversationFromMessage method:
 Future<void> updateConversationFromMessage(Message message) async {
   final currentUser = await getCurrentUser();
   if (currentUser == null) {
@@ -163,10 +164,39 @@ Future<void> updateConversationFromMessage(Message message) async {
     try {
       final conversation = Conversation.fromJson(Map<String, dynamic>.from(conversationJson));
       
-      // Only increment unread count for incoming messages that aren't from current user
+      // Calculate new unread count:
+      // 1. Only for incoming messages (not sent by current user)
+      // 2. Only if the message isn't already marked as read
       int newUnreadCount = conversation.unreadCount;
+      
       if (!message.isSent && message.senderId != currentUser.id) {
-        newUnreadCount += 1;
+        // Check if this is a new message we haven't processed before
+        final messagesBox = _getMessagesBox();
+        bool messageExists = false;
+        
+        // Generate the key we'd use for this message
+        final messageKey = '$conversationId:${message.id}';
+        
+        if (messagesBox.containsKey(messageKey)) {
+          messageExists = true;
+        } else {
+          // Check by ID in case the key format changed
+          for (var key in messagesBox.keys) {
+            final existingMessage = messagesBox.get(key);
+            if (existingMessage != null && existingMessage['_id'] == message.id) {
+              messageExists = true;
+              break;
+            }
+          }
+        }
+        
+        // Only increment if it's a new message
+        if (!messageExists) {
+          newUnreadCount += 1;
+          print('HiveStorage: New unread message! Incrementing count to $newUnreadCount');
+        } else {
+          print('HiveStorage: Message already exists, not changing unread count');
+        }
       }
       
       // Create updated conversation with new message info
@@ -176,18 +206,28 @@ Future<void> updateConversationFromMessage(Message message) async {
         unreadCount: newUnreadCount,
       );
       
+      // Debug
+      print('HiveStorage: Updating conversation $conversationId with unread count: $newUnreadCount');
+      
       // Save the updated conversation
       await box.put(conversationId, updatedConversation.toJson());
-      print('HiveStorage: Updated conversation: $conversationId with last message: "${message.content}", time: ${message.createdAt}');
+      
     } catch (e) {
       print('HiveStorage: Error updating conversation: $e');
     }
   } else {
-    // Create a placeholder conversation until we get user details
-    print('HiveStorage: Creating new conversation from message for: $conversationId');
+    // Get a proper name for the conversation - use sender name if available
+    // IMPORTANT: Use senderName first if available, fallback to ID only as last resort
+    final conversationName = message.isSent 
+                           ? 'User' // This is a placeholder that will be updated when user profile is loaded
+                           : (message.senderName != null && message.senderName!.isNotEmpty)
+                              ? message.senderName! // Priority 1: Use senderName if available
+                              : 'User ($conversationId)'; // Fallback with formatted ID as last resort
+    
+    print('HiveStorage: Creating new conversation from message for: $conversationId with name: $conversationName');
     final newConversation = Conversation(
       id: conversationId,
-      name: message.isSent ? 'User' : message.senderId, // Placeholder
+      name: conversationName, // Use sender name instead of ID
       lastMessage: message.content,
       lastMessageTime: message.createdAt,
       status: 'offline',
@@ -195,7 +235,7 @@ Future<void> updateConversationFromMessage(Message message) async {
     );
     
     await box.put(conversationId, newConversation.toJson());
-    print('HiveStorage: Created new conversation: $conversationId with last message: "${message.content}"');
+    print('HiveStorage: Created new conversation: $conversationId with name: "$conversationName" and last message: "${message.content}"');
   }
 }
   // Delete a conversation

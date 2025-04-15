@@ -10,6 +10,7 @@ class Message {
   final bool isSent; // Whether current user is the sender
   final String? fileUrl;
   final String? fileName;
+  final String? senderName; // Added field for sender's username
 
   Message({
     required this.id,
@@ -22,10 +23,19 @@ class Message {
     required this.isSent,
     this.fileUrl,
     this.fileName,
+    this.senderName, // Added parameter for sender's username
   });
 
   factory Message.fromJson(Map<String, dynamic> json, String currentUserId) {
     final senderId = json['sender'] is Map ? json['sender']['_id'] : json['sender'];
+    
+    // Extract senderName from JSON if available
+    String? senderName;
+    if (json['senderName'] != null) {
+      senderName = json['senderName'];
+    } else if (json['sender'] is Map && json['sender']['username'] != null) {
+      senderName = json['sender']['username'];
+    }
     
     return Message(
       id: json['_id'],
@@ -38,6 +48,7 @@ class Message {
       isSent: senderId == currentUserId,
       fileUrl: json['fileUrl'],
       fileName: json['fileName'],
+      senderName: senderName, // Add sender name to the message
     );
   }
 
@@ -46,10 +57,18 @@ class Message {
     try {
       // Handle different possible formats for sender and receiver
       String senderId = '';
+      String? senderName;
+      
       if (data['sender'] is Map) {
         senderId = data['sender']['_id'] ?? data['sender']['id'] ?? '';
+        senderName = data['sender']['username'];
       } else {
         senderId = data['sender'] ?? '';
+      }
+      
+      // If senderName wasn't in the sender map, check if it's directly in the data
+      if (senderName == null && data['senderName'] != null) {
+        senderName = data['senderName'];
       }
       
       String receiverId = '';
@@ -89,6 +108,7 @@ class Message {
         isSent: isSent,
         fileUrl: data['fileUrl'],
         fileName: data['fileName'],
+        senderName: senderName, // Add sender name to the message
       );
     } catch (e) {
       print('Error creating Message from socket data: $e');
@@ -104,6 +124,7 @@ class Message {
         createdAt: DateTime.now(),
         status: 'sent',
         isSent: data['sender'] == currentUserId,
+        senderName: data['senderName'],
       );
     }
   }
@@ -116,6 +137,7 @@ class Message {
     String contentType = 'text',
     String? fileUrl,
     String? fileName,
+    String? senderName, // Add sender name to temp messages
   }) {
     final now = DateTime.now();
     return Message(
@@ -129,6 +151,7 @@ class Message {
       isSent: true,
       fileUrl: fileUrl,
       fileName: fileName,
+      senderName: senderName, // Include sender name
     );
   }
 
@@ -144,6 +167,7 @@ class Message {
       'isSent': isSent,
       'fileUrl': fileUrl,
       'fileName': fileName,
+      'senderName': senderName, // Include sender name in JSON
     };
   }
 
@@ -154,6 +178,7 @@ class Message {
     String? contentType,
     String? fileUrl,
     String? fileName,
+    String? senderName, // Add to copyWith method
   }) {
     return Message(
       id: id ?? this.id,
@@ -166,6 +191,7 @@ class Message {
       isSent: this.isSent,
       fileUrl: fileUrl ?? this.fileUrl,
       fileName: fileName ?? this.fileName,
+      senderName: senderName ?? this.senderName, // Preserve sender name
     );
   }
 }
