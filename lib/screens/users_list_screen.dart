@@ -14,20 +14,37 @@ class UsersListScreen extends StatefulWidget {
   _UsersListScreenState createState() => _UsersListScreenState();
 }
 
-class _UsersListScreenState extends State<UsersListScreen> {
+class _UsersListScreenState extends State<UsersListScreen> with SingleTickerProviderStateMixin {
   List<User> _users = [];
   List<User> _filteredUsers = [];
   bool _isLoading = true;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   late HiveStorage _hiveStorage;
+  
+  // Animation controller for staggered list
+  late AnimationController _animationController;
 
   @override
   void initState() {
     super.initState();
     // Get HiveStorage instance from provider
     _hiveStorage = Provider.of<HiveStorage>(context, listen: false);
+    
+    // Set up animation controller
+    _animationController = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 800),
+    );
+    
     _loadUsers();
+  }
+  
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _animationController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUsers() async {
@@ -85,6 +102,9 @@ class _UsersListScreenState extends State<UsersListScreen> {
           _filteredUsers = users;
           _isLoading = false;
         });
+        
+        // Start animation
+        _animationController.forward();
       } else {
         print('Failed to load users. Status code: ${response.statusCode}');
         throw Exception('Failed to load users');
@@ -168,78 +188,13 @@ class _UsersListScreenState extends State<UsersListScreen> {
   }
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: const Color(0xFF2A64F6),
-        title: Text(
-          'New Chat',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.refresh),
-            onPressed: _loadUsers,
-            tooltip: 'Refresh Users',
-          ),
-        ],
-      ),
+      appBar: _buildAppBar(),
       body: Column(
         children: [
-          // Search bar
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF2A64F6),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(20),
-                bottomRight: Radius.circular(20),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 8,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 20),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search users...',
-                prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide(color: Colors.white, width: 1.5),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: EdgeInsets.symmetric(vertical: 12),
-              ),
-              onChanged: _filterUsers,
-            ),
-          ),
-          
-          // Users list
+          _buildSearchBar(),
           Expanded(
             child: _isLoading
               ? Center(
@@ -249,15 +204,224 @@ class _UsersListScreenState extends State<UsersListScreen> {
                 )
               : _filteredUsers.isEmpty
                 ? _buildEmptyState()
-                : ListView.builder(
-                    itemCount: _filteredUsers.length,
-                    itemBuilder: (context, index) {
-                      final user = _filteredUsers[index];
-                      return _buildUserItem(user);
-                    },
-                  ),
+                : _buildUsersList(),
           ),
         ],
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Colors.white,
+      foregroundColor: Colors.black87,
+      centerTitle: true,
+      title: Text(
+        'New Chat',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 18,
+          color: Colors.black87,
+        ),
+      ),
+      actions: [
+        IconButton(
+          icon: Icon(Icons.refresh, color: Colors.black87),
+          onPressed: _loadUsers,
+          tooltip: 'Refresh',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: EdgeInsets.all(16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: _filterUsers,
+          decoration: InputDecoration(
+            hintText: 'Search users...',
+            prefixIcon: Icon(Icons.search, color: Colors.grey[600], size: 20),
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          ),
+          style: TextStyle(fontSize: 15),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUsersList() {
+    return ListView.builder(
+      padding: EdgeInsets.only(top: 8),
+      itemCount: _filteredUsers.length,
+      itemBuilder: (context, index) {
+        final Animation<double> animation = CurvedAnimation(
+          parent: _animationController,
+          curve: Interval(
+            (1 / _filteredUsers.length) * index,
+            1.0,
+            curve: Curves.easeOut,
+          ),
+        );
+        
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: Offset(0, 0.25),
+              end: Offset.zero,
+            ).animate(animation),
+            child: _buildUserItem(_filteredUsers[index]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUserItem(User user) {
+    final hasPicture = user.profilePicture != null && 
+                       user.profilePicture!.isNotEmpty &&
+                       !user.profilePicture!.contains('default-avatar');
+    
+    return InkWell(
+      onTap: () => _startConversation(user),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: Colors.grey.withOpacity(0.1),
+              width: 1,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Avatar with status
+            Stack(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 5,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 26,
+                    backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
+                    backgroundImage: hasPicture
+                        ? NetworkImage('http://192.168.100.76:4400/${user.profilePicture}')
+                        : null,
+                    child: !hasPicture && user.username.isNotEmpty
+                        ? Text(
+                            user.username[0].toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF2A64F6),
+                            ),
+                          )
+                        : null,
+                  ),
+                ),
+                
+                // Status indicator
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: user.status == 'online' 
+                          ? Colors.green 
+                          : user.status == 'away'
+                              ? Colors.orange
+                              : Colors.grey[400],
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            
+            SizedBox(width: 16),
+            
+            // User details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.username,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    user.email ?? '',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            
+            // Status badge
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: user.status == 'online' 
+                    ? Colors.green.withOpacity(0.1)
+                    : user.status == 'away'
+                        ? Colors.orange.withOpacity(0.1)
+                        : Colors.grey.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                user.status == 'online' ? 'Online' : 
+                user.status == 'away' ? 'Away' : 'Offline',
+                style: TextStyle(
+                  color: user.status == 'online' 
+                      ? Colors.green[700] 
+                      : user.status == 'away'
+                          ? Colors.orange[700]
+                          : Colors.grey[700],
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -322,8 +486,9 @@ class _UsersListScreenState extends State<UsersListScreen> {
                 foregroundColor: Colors.white,
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                elevation: 0,
               ),
               onPressed: _loadUsers,
             ),
@@ -331,130 +496,5 @@ class _UsersListScreenState extends State<UsersListScreen> {
         ),
       );
     }
-  }
-
-  Widget _buildUserItem(User user) {
-    final hasPicture = user.profilePicture != null && 
-                       user.profilePicture!.isNotEmpty &&
-                       !user.profilePicture!.contains('default-avatar');
-    
-    return Card(
-      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      elevation: 0.3,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _startConversation(user),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              // Avatar with status indicator
-              Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: const Color(0xFF2A64F6).withOpacity(0.2),
-                    backgroundImage: hasPicture
-                        ? NetworkImage('http://192.168.100.76:4400/${user.profilePicture}')
-                        : null,
-                    child: !hasPicture && user.username.isNotEmpty
-                        ? Text(
-                            user.username[0].toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF2A64F6),
-                            ),
-                          )
-                        : null,
-                  ),
-                  // Status indicator
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: user.status == 'online' 
-                            ? Colors.green 
-                            : user.status == 'away'
-                                ? Colors.orange
-                                : Colors.grey[400],
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(width: 16),
-              // User details
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      user.username,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      user.email ?? '',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              // Status badge
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: user.status == 'online' 
-                      ? Colors.green.withOpacity(0.1)
-                      : user.status == 'away'
-                          ? Colors.orange.withOpacity(0.1)
-                          : Colors.grey.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: user.status == 'online' 
-                        ? Colors.green.withOpacity(0.3)
-                        : user.status == 'away'
-                            ? Colors.orange.withOpacity(0.3)
-                            : Colors.grey.withOpacity(0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  user.status == 'online' ? 'Online' : 
-                  user.status == 'away' ? 'Away' : 'Offline',
-                  style: TextStyle(
-                    color: user.status == 'online' 
-                        ? Colors.green[700] 
-                        : user.status == 'away'
-                            ? Colors.orange[700]
-                            : Colors.grey[700],
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

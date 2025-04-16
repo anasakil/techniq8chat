@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:techniq8chat/screens/chat_screen.dart';
+import 'package:techniq8chat/screens/profile_screen.dart';
 import 'package:techniq8chat/screens/users_list_screen.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
@@ -180,7 +181,9 @@ class _ConversationsScreenState extends State<ConversationsScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => Center(child: CircularProgressIndicator()),
+      builder: (context) => Center(child: CircularProgressIndicator(
+        color: const Color(0xFF2A64F6),
+      )),
     );
 
     try {
@@ -246,78 +249,30 @@ class _ConversationsScreenState extends State<ConversationsScreen>
             .toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: const Color(0xFF2A64F6),
-        title: Text(
-          'Techniq8Chat',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 22,
-          ),
-        ),
-        actions: [
-          // Status indicator removed as requested
-          IconButton(
-            icon: Icon(Icons.logout),
-            onPressed: _logout,
-          ),
-        ],
-      ),
+      backgroundColor: Colors.white,
+      appBar: _buildAppBar(),
       body: Column(
         children: [
           // Search bar
-          Container(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: TextField(
-              controller: _searchController,
-              onChanged: _filterConversations,
-              decoration: InputDecoration(
-                hintText: 'Search conversations...',
-                prefixIcon: Icon(Icons.search, color: Colors.grey),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: EdgeInsets.symmetric(vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide(color: Color(0xFF2A64F6), width: 1.5),
-                ),
-              ),
-            ),
-          ),
-
-          // Connection status indicator if offline - REMOVED AS REQUESTED
-          /* Removed offline status message */
-
-          // Conversations list
+          _buildSearchBar(),
+          
+          // Content
           Expanded(
             child: RefreshIndicator(
               onRefresh: _loadConversations,
+              color: const Color(0xFF2A64F6),
               child: _isLoading
-                  ? Center(child: CircularProgressIndicator())
+                  ? Center(child: CircularProgressIndicator(
+                      color: const Color(0xFF2A64F6),
+                    ))
                   : filteredConversations.isEmpty
                       ? _buildEmptyState()
-                      : ListView.builder(
-                          itemCount: filteredConversations.length,
-                          itemBuilder: (context, index) {
-                            return _buildConversationItem(
-                                filteredConversations[index]);
-                          },
-                        ),
+                      : _buildConversationsList(filteredConversations),
             ),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.push(
             context,
@@ -325,11 +280,85 @@ class _ConversationsScreenState extends State<ConversationsScreen>
           ).then((_) => _loadConversations());
         },
         backgroundColor: const Color(0xFF2A64F6),
-        icon: Icon(Icons.chat_bubble_outline, color: Colors.white),
-        label: Text('New Chat',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        elevation: 4,
+        child: Icon(Icons.chat_bubble_outline, color: Colors.white),
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
       ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+  elevation: 0,
+  scrolledUnderElevation: 0,
+  backgroundColor: Colors.white,
+  surfaceTintColor: Colors.white,
+  leadingWidth: 0, // Remove default leading space
+  titleSpacing: 16, // Add padding to the left of the title
+  centerTitle: false, // Left align the title
+  title: Image.asset(
+    'assets/logo.png', // Make sure this image exists in your assets
+    height: 32, // Appropriate size for the app bar
+    fit: BoxFit.contain,
+    alignment: Alignment.centerLeft,
+  ),
+  actions: [
+  IconButton(
+    icon: Icon(Icons.person_outline, color: Colors.black87),
+    onPressed: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => ProfileScreen()),
+      );
+    },
+  ),
+  IconButton(
+    icon: Icon(Icons.logout, color: Colors.black87),
+    onPressed: _logout,
+  ),
+],
+);
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: EdgeInsets.all(16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: _filterConversations,
+          decoration: InputDecoration(
+            hintText: 'Search conversations...',
+            prefixIcon: Icon(Icons.search, color: Colors.grey[600], size: 20),
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          ),
+          style: TextStyle(fontSize: 15),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConversationsList(List<Conversation> conversations) {
+    return ListView.builder(
+      padding: EdgeInsets.only(top: 8),
+      itemCount: conversations.length,
+      itemBuilder: (context, index) {
+        return _buildConversationItem(conversations[index]);
+      },
     );
   }
 
@@ -342,13 +371,13 @@ class _ConversationsScreenState extends State<ConversationsScreen>
             Icon(
               Icons.search_off,
               size: 80,
-              color: Colors.grey[400],
+              color: Colors.grey[300],
             ),
             SizedBox(height: 16),
             Text(
               'No conversations found',
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.grey[700],
               ),
@@ -367,18 +396,10 @@ class _ConversationsScreenState extends State<ConversationsScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Image.asset(
-            'assets/images/empty_chat.png', // Add this asset to your pubspec.yaml
-            width: 120,
-            height: 120,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              return Icon(
-                Icons.chat_bubble_outline,
-                size: 100,
-                color: Colors.grey[300],
-              );
-            },
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 100,
+            color: Colors.grey[300],
           ),
           SizedBox(height: 24),
           Text(
@@ -406,14 +427,14 @@ class _ConversationsScreenState extends State<ConversationsScreen>
                 MaterialPageRoute(builder: (context) => UsersListScreen()),
               ).then((_) => _loadConversations());
             },
-            icon: Icon(Icons.add),
-            label: Text('Start chatting'),
+            icon: Icon(Icons.chat_bubble_outline),
+            label: Text('New Conversation'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2A64F6),
               foregroundColor: Colors.white,
               padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
           ),
@@ -423,187 +444,191 @@ class _ConversationsScreenState extends State<ConversationsScreen>
   }
 
   Widget _buildConversationItem(Conversation conversation) {
-    return Card(
-      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      elevation: 0.5,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () async {
-          // Mark conversation as read before navigating
-          if (conversation.unreadCount > 0) {
-            await _hiveStorage.markConversationAsRead(conversation.id);
+    return InkWell(
+      onTap: () async {
+        // Mark conversation as read before navigating
+        if (conversation.unreadCount > 0) {
+          await _hiveStorage.markConversationAsRead(conversation.id);
 
-            // Also refresh the local list to update the UI
-            final updatedConversation = conversation.copyWith(unreadCount: 0);
-            final index =
-                _conversations.indexWhere((c) => c.id == conversation.id);
+          // Also refresh the local list to update the UI
+          final updatedConversation = conversation.copyWith(unreadCount: 0);
+          final index =
+              _conversations.indexWhere((c) => c.id == conversation.id);
 
-            if (index >= 0) {
-              setState(() {
-                _conversations[index] = updatedConversation;
-              });
-            }
+          if (index >= 0) {
+            setState(() {
+              _conversations[index] = updatedConversation;
+            });
           }
+        }
 
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ChatScreen(
-                conversationId: conversation.id,
-                conversationName: conversation.name,
-              ),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              conversationId: conversation.id,
+              conversationName: conversation.name,
             ),
-          ).then((_) {
-            // Refresh the conversations when returning from chat screen
-            _loadConversations();
-          });
-        },
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              // Avatar with status indicator
-              Stack(
+          ),
+        ).then((_) {
+          // Refresh the conversations when returning from chat screen
+          _loadConversations();
+        });
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: Colors.grey.withOpacity(0.1),
+              width: 1,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Avatar with status indicator
+            _buildAvatar(conversation),
+            SizedBox(width: 16),
+            
+            // Conversation details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 4,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: CircleAvatar(
-                      radius: 28,
-                      backgroundColor: const Color(0xFF2A64F6).withOpacity(0.2),
-                      backgroundImage: conversation.profilePicture != null &&
-                              conversation.profilePicture!.isNotEmpty &&
-                              !conversation.profilePicture!
-                                  .contains('default-avatar')
-                          ? NetworkImage(
-                              'http://192.168.100.76:4400/${conversation.profilePicture}')
-                          : null,
-                      child: (conversation.profilePicture == null ||
-                              conversation.profilePicture!.isEmpty ||
-                              conversation.profilePicture!
-                                  .contains('default-avatar'))
-                          ? Text(
-                              conversation.name.isNotEmpty
-                                  ? conversation.name[0].toUpperCase()
-                                  : "?",
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFF2A64F6),
-                              ),
-                            )
-                          : null,
-                    ),
-                  ),
-                  // Online status indicator
-                  if (conversation.status == 'online')
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: Colors.green,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
+                  // Name and time
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          conversation.name,
+                          style: TextStyle(
+                            fontWeight: conversation.unreadCount > 0
+                                ? FontWeight.bold
+                                : FontWeight.w600,
+                            fontSize: 16,
+                            color: Colors.black87,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
+                      SizedBox(width: 4),
+                      if (conversation.lastMessageTime != null)
+                        Text(
+                          _formatTime(conversation.lastMessageTime!),
+                          style: TextStyle(
+                            color: conversation.unreadCount > 0
+                                ? const Color(0xFF2A64F6)
+                                : Colors.grey[500],
+                            fontWeight: conversation.unreadCount > 0
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                  
+                  SizedBox(height: 4),
+                  
+                  // Message preview and unread indicator
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          conversation.lastMessage ?? 'No messages yet',
+                          style: TextStyle(
+                            color: conversation.unreadCount > 0
+                                ? Colors.black87
+                                : Colors.grey[600],
+                            fontWeight: conversation.unreadCount > 0
+                                ? FontWeight.w500
+                                : FontWeight.normal,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      
+                      // Unread indicator
+                      if (conversation.unreadCount > 0)
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A64F6),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
-              SizedBox(width: 12),
-              // Message content
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            conversation.name,
-                            style: TextStyle(
-                              fontWeight: conversation.unreadCount > 0
-                                  ? FontWeight.bold
-                                  : FontWeight.w600,
-                              fontSize: 16,
-                              color: Colors.black87,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        SizedBox(width: 4),
-                        if (conversation.lastMessageTime != null)
-                          Container(
-                            child: Text(
-                              _formatTime(conversation.lastMessageTime!),
-                              style: TextStyle(
-                                color: conversation.unreadCount > 0
-                                    ? const Color(0xFF2A64F6)
-                                    : Colors.grey[600],
-                                fontWeight: conversation.unreadCount > 0
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    SizedBox(height: 4),
-                    // Badge without displaying the number count
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            conversation.lastMessage ?? 'No messages yet',
-                            style: TextStyle(
-                              color: conversation.unreadCount > 0
-                                  ? Colors.black87
-                                  : Colors.grey[600],
-                              fontWeight: conversation.unreadCount > 0
-                                  ? FontWeight.w500
-                                  : FontWeight.normal,
-                              fontSize: 13,
-                              height: 1.3,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        SizedBox(width: 8),
-                        // Only show a dot indicator without the number
-                        if (conversation.unreadCount > 0)
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2A64F6),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    )
-                  ],
-                ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar(Conversation conversation) {
+    return Stack(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 5,
+                offset: Offset(0, 2),
               ),
             ],
           ),
+          child: CircleAvatar(
+            radius: 28,
+            backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
+            backgroundImage: conversation.profilePicture != null &&
+                    conversation.profilePicture!.isNotEmpty &&
+                    !conversation.profilePicture!.contains('default-avatar')
+                ? NetworkImage('http://192.168.100.76:4400/${conversation.profilePicture}')
+                : null,
+            child: (conversation.profilePicture == null ||
+                    conversation.profilePicture!.isEmpty ||
+                    conversation.profilePicture!.contains('default-avatar'))
+                ? Text(
+                    conversation.name.isNotEmpty
+                        ? conversation.name[0].toUpperCase()
+                        : "?",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF2A64F6),
+                    ),
+                  )
+                : null,
+          ),
         ),
-      ),
+        
+        // Online status indicator
+        if (conversation.status == 'online')
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: Colors.green,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

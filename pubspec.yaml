@@ -45,6 +45,8 @@ dependencies:
   # Utils
   intl: ^0.18.0
   uuid: ^3.0.7
+  image_picker: ^0.8.7  # Added image picker package
+
   
   
   
@@ -86,6 +88,7 @@ flutter:
     - assets/login.json
     - assets/reset.json
     - assets/otp1.json
+    - assets/logo.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
