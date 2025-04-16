@@ -7,6 +7,8 @@ import 'package:techniq8chat/services/auth_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+import 'package:http_parser/http_parser.dart';
 
 class ProfileScreen extends StatefulWidget {
   @override
@@ -109,6 +111,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (token == null) {
         _showErrorSnackBar('Authentication error. Please login again.');
+        setState(() {
+          _isUpdating = false;
+        });
         return;
       }
 
@@ -130,37 +135,95 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       // Add profile picture if selected
       if (_imageFile != null) {
-        request.files.add(await http.MultipartFile.fromPath(
-          'profilePicture',
-          _imageFile!.path,
-        ));
+        // Get file extension and determine MIME type
+        final String extension = _imageFile!.path.split('.').last.toLowerCase();
+        String contentType;
+
+        switch (extension) {
+          case 'jpg':
+          case 'jpeg':
+            contentType = 'image/jpeg';
+            break;
+          case 'png':
+            contentType = 'image/png';
+            break;
+          case 'gif':
+            contentType = 'image/gif';
+            break;
+          default:
+            _showErrorSnackBar(
+                'Unsupported file type. Please use JPG, JPEG, PNG or GIF.');
+            setState(() {
+              _isUpdating = false;
+            });
+            return;
+        }
+
+        try {
+          final fileStream = http.ByteStream(_imageFile!.openRead());
+          final fileLength = await _imageFile!.length();
+
+          final multipartFile = http.MultipartFile(
+            'profilePicture',
+            fileStream,
+            fileLength,
+            filename: 'profile_image.$extension',
+            contentType: MediaType.parse(contentType),
+          );
+
+          request.files.add(multipartFile);
+        } catch (e) {
+          _showErrorSnackBar('Error preparing image: ${e.toString()}');
+          setState(() {
+            _isUpdating = false;
+          });
+          return;
+        }
       }
 
       // Send request
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      try {
+        final streamedResponse =
+            await request.send().timeout(Duration(seconds: 30));
+        final response = await http.Response.fromStream(streamedResponse);
 
-      if (response.statusCode == 200) {
-        final updatedData = json.decode(response.body);
+        if (response.statusCode == 200) {
+          final updatedData = json.decode(response.body);
 
-        setState(() {
-          _username = updatedData['username'];
-          _email = updatedData['email'];
-          _bio = updatedData['bio'];
-          _profilePicture = updatedData['profilePicture'];
+          setState(() {
+            _username = updatedData['username'];
+            _email = updatedData['email'];
+            _bio = updatedData['bio'];
+            _profilePicture = updatedData['profilePicture'];
 
-          _isEditing = false;
-          _isUpdating = false;
-        });
+            _isEditing = false;
+            _isUpdating = false;
+          });
 
-        // Update AuthService with new user data
-        final authService = Provider.of<AuthService>(context, listen: false);
-        // authService.updateUserData(updatedData);
+          // Update AuthService with new user data
+          final authService = Provider.of<AuthService>(context, listen: false);
+          // authService.updateUserData(updatedData);
 
-        _showSuccessSnackBar('Profile updated successfully!');
-      } else {
-        final errorData = json.decode(response.body);
-        _showErrorSnackBar(errorData['message'] ?? 'Failed to update profile.');
+          _showSuccessSnackBar('Profile updated successfully!');
+        } else {
+          // Try to parse error message from response body
+          String errorMessage = 'Failed to update profile.';
+          try {
+            final errorData = json.decode(response.body);
+            errorMessage = errorData['message'] ?? errorMessage;
+          } catch (_) {}
+
+          _showErrorSnackBar(errorMessage);
+          setState(() {
+            _isUpdating = false;
+          });
+        }
+      } catch (e) {
+        if (e is TimeoutException) {
+          _showErrorSnackBar('Request timed out. Please try again.');
+        } else {
+          _showErrorSnackBar('Error sending request: ${e.toString()}');
+        }
         setState(() {
           _isUpdating = false;
         });
@@ -175,14 +238,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _pickImage() async {
     try {
+      // First, show a dialog to let the user choose between gallery and camera
+      final source = await showDialog<ImageSource>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Select Image Source'),
+            content: SingleChildScrollView(
+              child: ListBody(
+                children: <Widget>[
+                  GestureDetector(
+                    child: Text('Gallery'),
+                    onTap: () {
+                      Navigator.of(context).pop(ImageSource.gallery);
+                    },
+                  ),
+                  SizedBox(height: 16),
+                  GestureDetector(
+                    child: Text('Camera'),
+                    onTap: () {
+                      Navigator.of(context).pop(ImageSource.camera);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
+      if (source == null) return; // User canceled the dialog
+
       final pickedFile = await _picker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         maxWidth: 800,
         maxHeight: 800,
         imageQuality: 85,
       );
 
       if (pickedFile != null) {
+        // Check file extension to validate file type
+        final String extension = pickedFile.path.split('.').last.toLowerCase();
+        final List<String> allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
+
+        if (!allowedExtensions.contains(extension)) {
+          _showErrorSnackBar(
+              'File type not supported. Please use JPG, JPEG, PNG or GIF.');
+          return;
+        }
+
+        // Check file size (limit to 5MB)
+        final File file = File(pickedFile.path);
+        final int fileSize = await file.length();
+        if (fileSize > 5 * 1024 * 1024) {
+          _showErrorSnackBar('Image too large. Maximum size is 5MB.');
+          return;
+        }
+
         setState(() {
           _imageFile = File(pickedFile.path);
         });

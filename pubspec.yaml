@@ -46,13 +46,8 @@ dependencies:
   intl: ^0.18.0
   uuid: ^3.0.7
   image_picker: ^0.8.7  # Added image picker package
-
+  lottie: ^2.7.0  # Added for animations
   
-  
-  
-
-
-
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
@@ -69,6 +64,27 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   hive_generator: ^2.0.0
   build_runner: ^2.3.3
+  flutter_launcher_icons: ^0.13.1  # Use the latest version
+
+# Flutter Launcher Icons configuration
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  min_sdk_android: 21
+  remove_alpha_ios: false
+  web:
+    generate: true
+    image_path: "assets/icon.png"
+    background_color: "#2A64F6"
+    theme_color: "#2A64F6"
+  windows:
+    generate: true
+    image_path: "assets/icon.png"
+    icon_size: 48
+  macos:
+    generate: true
+    image_path: "assets/icon.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -88,7 +104,7 @@ flutter:
     - assets/login.json
     - assets/reset.json
     - assets/otp1.json
-    - assets/logo.png
+    - assets/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

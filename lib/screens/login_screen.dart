@@ -1,7 +1,7 @@
 // screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:techniq8chat/screens/conversations_screen.dart';
+import 'package:techniq8chat/screens/bottom_navigation_screen.dart'; // Updated import
 import 'package:techniq8chat/screens/create_account_screen.dart';
 import '../services/auth_service.dart';
 
@@ -61,9 +61,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       final authService = Provider.of<AuthService>(context, listen: false);
       await authService.login(_emailController.text, _passwordController.text);
       
-      // Navigate to conversations screen
+      // Navigate to bottom navigation screen instead of conversations screen
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => ConversationsScreen()),
+        MaterialPageRoute(builder: (_) => BottomNavigationScreen()),
       );
     } catch (e) {
       setState(() {

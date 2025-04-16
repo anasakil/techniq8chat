@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:techniq8chat/models/user_model.dart';
+import 'package:techniq8chat/screens/user_details_page.dart';
 import '../models/message.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
@@ -13,10 +14,12 @@ import 'dart:math' as Math;
 class ChatScreen extends StatefulWidget {
   final String conversationId;
   final String conversationName;
+  final String? profilePicture; // Added this line
 
   ChatScreen({
     required this.conversationId,
     required this.conversationName,
+    this.profilePicture, // Added this parameter
   });
 
   @override
@@ -27,20 +30,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late HiveStorage _hiveStorage;
-  
+
   List<Message> _messages = [];
   bool _isLoading = true;
   String? _typingUserId;
   Timer? _typingTimer;
   bool _isConnected = false;
   bool _showEmojiPicker = false;
-  
+
   late SocketService _socketService;
   late StreamSubscription _connectionSubscription;
   late StreamSubscription _newMessageSubscription;
   late StreamSubscription _messageStatusSubscription;
   late StreamSubscription _typingSubscription;
-  
+
   // For message animation
   final Map<String, AnimationController> _animationControllers = {};
 
@@ -57,17 +60,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     try {
       // Mark conversation as read in Hive storage
       await _hiveStorage.markConversationAsRead(widget.conversationId);
-      print('Marked conversation ${widget.conversationId} as read on screen load');
+      print(
+          'Marked conversation ${widget.conversationId} as read on screen load');
     } catch (e) {
       print('Error marking conversation as read: $e');
     }
   }
-  
+
   Future<void> _initializeServices() async {
     // Get the current user
     final authService = Provider.of<AuthService>(context, listen: false);
     final currentUser = authService.currentUser;
-    
+
     if (currentUser == null) {
       // Handle case where user is not logged in
       Navigator.of(context).pop();
@@ -108,9 +112,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     // Listen for new messages
     _newMessageSubscription = _socketService.onNewMessage.listen((message) {
-      print("New message received in chat screen: ${message.id} from ${message.senderId}");
+      print(
+          "New message received in chat screen: ${message.id} from ${message.senderId}");
       // Only add messages for this conversation
-      if (message.senderId == widget.conversationId || 
+      if (message.senderId == widget.conversationId ||
           message.receiverId == widget.conversationId) {
         _handleNewMessage(message);
       }
@@ -118,7 +123,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     // Listen for message status updates
     _messageStatusSubscription = _socketService.onMessageStatus.listen((data) {
-      print("Message status update in chat screen: ${data['messageId']} - ${data['status']}");
+      print(
+          "Message status update in chat screen: ${data['messageId']} - ${data['status']}");
       _updateMessageStatus(data['messageId'], data['status']);
     });
 
@@ -133,11 +139,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _loadMessages([User? directUser]) async {
     try {
       print("LOADING MESSAGES FOR CONVERSATION: ${widget.conversationId}");
-      
+
       // Get the current user to help with debugging
       final authService = Provider.of<AuthService>(context, listen: false);
       final currentUser = directUser ?? authService.currentUser;
-      
+
       if (currentUser == null) {
         print("ERROR: No current user available for message loading");
         setState(() {
@@ -145,32 +151,30 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         });
         return;
       }
-      
+
       print("Current user ID for message loading: ${currentUser.id}");
-      
+
       // Print conversation details for debug
       _hiveStorage.debugPrintAllData();
-      
+
       // Pass the current user directly to getMessages to avoid timing issues
-      final messages = await _hiveStorage.getMessages(
-        widget.conversationId, 
-        directUser: currentUser
-      );
-      
+      final messages = await _hiveStorage.getMessages(widget.conversationId,
+          directUser: currentUser);
+
       // Debug print to verify messages
       print('Loaded ${messages.length} messages for UI');
-      
+
       if (mounted) {
         setState(() {
           _messages = messages;
           _isLoading = false;
         });
-        
+
         // Create animation controllers for each message
         for (final message in messages) {
           _createAnimationController(message.id);
         }
-        
+
         // Scroll to bottom after messages are loaded
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _scrollToBottom();
@@ -186,30 +190,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   void _handleNewMessage(Message message) async {
     print("Handling new message: ${message.id}, content: ${message.content}");
-    
+
     // Get current user for consistent handling
     final authService = Provider.of<AuthService>(context, listen: false);
     final currentUser = authService.currentUser;
-    
+
     if (currentUser == null) {
       print("ERROR: No current user available when handling new message");
       return;
     }
-    
+
     // Check if message is for this conversation
-    final isRelevantMessage = 
-      (message.senderId == widget.conversationId && message.receiverId == currentUser.id) ||
-      (message.receiverId == widget.conversationId && message.senderId == currentUser.id);
-    
+    final isRelevantMessage = (message.senderId == widget.conversationId &&
+            message.receiverId == currentUser.id) ||
+        (message.receiverId == widget.conversationId &&
+            message.senderId == currentUser.id);
+
     if (!isRelevantMessage) {
       print("Message not relevant to this conversation");
       return;
     }
-    
+
     // Mark message as delivered if it's from the other user
     if (!message.isSent) {
       _socketService.markMessageAsDelivered(message.id, message.senderId);
-      
+
       // Also mark as read since we're in the chat
       _socketService.markMessageAsRead(message.id, message.senderId);
     }
@@ -219,7 +224,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (existingIndex == -1) {
       // Create animation controller for the new message
       _createAnimationController(message.id);
-      
+
       // Add to messages list
       setState(() {
         _messages.add(message);
@@ -228,13 +233,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       // Save message to storage
       await _hiveStorage.saveMessage(message);
-      
+
       // Explicitly update the conversation for this message
       await _hiveStorage.updateConversationFromMessage(message);
 
       // Scroll to bottom
       _scrollToBottom();
-      
+
       // Play animation for new message
       _animationControllers[message.id]?.forward();
     } else {
@@ -290,14 +295,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     final authService = Provider.of<AuthService>(context, listen: false);
     final currentUser = authService.currentUser;
-    
+
     if (currentUser == null) {
       print("ERROR: No current user available when sending message");
       return;
     }
 
     print("Sending message to ${widget.conversationId}: $text");
-    
+
     // Clear input field
     _messageController.clear();
 
@@ -356,12 +361,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _newMessageSubscription.cancel();
     _messageStatusSubscription.cancel();
     _typingSubscription.cancel();
-    
+
     // Dispose all animation controllers
     for (final controller in _animationControllers.values) {
       controller.dispose();
     }
-    
+
     super.dispose();
   }
 
@@ -374,7 +379,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         children: [
           Expanded(
             child: _isLoading
-                ? Center(child: CircularProgressIndicator(
+                ? Center(
+                    child: CircularProgressIndicator(
                     color: const Color(0xFF2A64F6),
                   ))
                 : _messages.isEmpty
@@ -382,40 +388,75 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     : _buildMessagesList(),
           ),
           // Typing indicator
-          if (_typingUserId != null)
-            _buildTypingIndicatorBar(),
-          
+          if (_typingUserId != null) _buildTypingIndicatorBar(),
+
           // Message input area
           _buildMessageInput(),
         ],
       ),
     );
   }
-
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      elevation: 0,
-      backgroundColor: Colors.white,
-      foregroundColor: Colors.black87,
-      titleSpacing: 0,
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back_ios_new, size: 20),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-      title: Row(
+PreferredSizeWidget _buildAppBar() {
+  return AppBar(
+    elevation: 0,
+    backgroundColor: Colors.white,
+    foregroundColor: Colors.black87,
+    titleSpacing: 0,
+    leading: IconButton(
+      icon: Icon(Icons.arrow_back_ios_new, size: 20),
+      onPressed: () => Navigator.of(context).pop(),
+    ),
+    title: GestureDetector(
+      onTap: () {
+        // Navigate to user details page when tapping on the user info
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => UserDetailsPage(
+              userId: widget.conversationId,
+              initialUsername: widget.conversationName,
+              initialProfilePicture: widget.profilePicture,
+            ),
+          ),
+        );
+      },
+      child: Row(
         children: [
-          CircleAvatar(
-            backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
-            radius: 20,
-            child: Text(
-              widget.conversationName.isNotEmpty 
-                ? widget.conversationName[0].toUpperCase() 
-                : "?",
-              style: TextStyle(
-                fontSize: 16, 
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF2A64F6),
-              ),
+          // Make the avatar clickable as well
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => UserDetailsPage(
+                    userId: widget.conversationId,
+                    initialUsername: widget.conversationName,
+                    initialProfilePicture: widget.profilePicture,
+                  ),
+                ),
+              );
+            },
+            child: CircleAvatar(
+              backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
+              radius: 20,
+              backgroundImage: widget.profilePicture != null && 
+                           widget.profilePicture!.isNotEmpty &&
+                           !widget.profilePicture!.contains('default-avatar')
+                  ? NetworkImage('http://192.168.100.76:4400/${widget.profilePicture}')
+                  : null,
+              child: (widget.profilePicture == null || 
+                     widget.profilePicture!.isEmpty ||
+                     widget.profilePicture!.contains('default-avatar')) &&
+                     widget.conversationName.isNotEmpty
+                  ? Text(
+                      widget.conversationName[0].toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF2A64F6),
+                      ),
+                    )
+                  : null,
             ),
           ),
           SizedBox(width: 12),
@@ -442,22 +483,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           ),
         ],
       ),
-      actions: [
-        IconButton(
-          icon: Icon(Icons.phone_outlined),
-          onPressed: () {
-            // Call functionality placeholder
-          },
-        ),
-        IconButton(
-          icon: Icon(Icons.more_vert),
-          onPressed: () {
-            // More options menu placeholder
-          },
-        ),
-      ],
-    );
-  }
+    ),
+    actions: [
+      IconButton(
+        icon: Icon(Icons.phone_outlined),
+        onPressed: () {
+          // Call functionality placeholder
+        },
+      ),
+      IconButton(
+        icon: Icon(Icons.more_vert),
+        onPressed: () {
+          // More options menu placeholder
+        },
+      ),
+    ],
+  );
+}
 
   Widget _buildTypingIndicatorBar() {
     return Container(
@@ -495,7 +537,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               curve: Curves.easeInOut,
               builder: (context, double value, child) {
                 return Transform.scale(
-                  scale: 0.5 + (0.5 * Math.sin((value * 2 * Math.pi) + (index * Math.pi / 2))),
+                  scale: 0.5 +
+                      (0.5 *
+                          Math.sin(
+                              (value * 2 * Math.pi) + (index * Math.pi / 2))),
                   child: Container(
                     decoration: BoxDecoration(
                       color: const Color(0xFF2A64F6).withOpacity(0.6),
@@ -565,7 +610,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildMessagesList() {
     // Group messages by date for better sectioning
     final Map<String, List<Message>> messagesByDate = {};
-    
+
     for (final message in _messages) {
       final String dateKey = _formatDate(message.createdAt);
       if (!messagesByDate.containsKey(dateKey)) {
@@ -573,25 +618,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
       messagesByDate[dateKey]!.add(message);
     }
-    
+
     // Build sections for each date
     final List<Widget> sections = [];
     messagesByDate.forEach((date, messagesForDate) {
       sections.add(_buildDateDivider(date));
-      
+
       // Add message bubbles
       for (int i = 0; i < messagesForDate.length; i++) {
         final message = messagesForDate[i];
-        final showSenderInfo = i == 0 || 
-            messagesForDate[i-1].senderId != message.senderId || 
-            message.createdAt.difference(messagesForDate[i-1].createdAt).inMinutes > 5;
-            
+        final showSenderInfo = i == 0 ||
+            messagesForDate[i - 1].senderId != message.senderId ||
+            message.createdAt
+                    .difference(messagesForDate[i - 1].createdAt)
+                    .inMinutes >
+                5;
+
         sections.add(
           AnimatedBuilder(
-            animation: _animationControllers[message.id] ?? AnimationController(vsync: this, duration: Duration.zero),
+            animation: _animationControllers[message.id] ??
+                AnimationController(vsync: this, duration: Duration.zero),
             builder: (context, child) {
               final animation = CurvedAnimation(
-                parent: _animationControllers[message.id] ?? AnimationController(vsync: this, duration: Duration.zero)..value = 1.0,
+                parent: _animationControllers[message.id] ??
+                    AnimationController(vsync: this, duration: Duration.zero)
+                  ..value = 1.0,
                 curve: Curves.easeOutQuad,
               );
               return FadeTransition(
@@ -606,16 +657,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               );
             },
             child: _buildMessageBubble(
-              message, 
+              message,
               showSenderInfo: showSenderInfo,
-              isLastInGroup: i == messagesForDate.length - 1 || 
-                  messagesForDate[i+1].senderId != message.senderId,
+              isLastInGroup: i == messagesForDate.length - 1 ||
+                  messagesForDate[i + 1].senderId != message.senderId,
             ),
           ),
         );
       }
     });
-    
+
     return ListView(
       controller: _scrollController,
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -661,19 +712,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildMessageBubble(Message message, {bool showSenderInfo = true, bool isLastInGroup = true}) {
+  Widget _buildMessageBubble(Message message,
+      {bool showSenderInfo = true, bool isLastInGroup = true}) {
     final isSent = message.isSent;
-    
+
     // Time formatter
     final timeString = DateFormat.jm().format(message.createdAt);
-    
+
     return Padding(
       padding: EdgeInsets.only(
         top: showSenderInfo ? 12 : 2,
         bottom: isLastInGroup ? 12 : 2,
       ),
       child: Row(
-        mainAxisAlignment: isSent ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isSent ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           // Avatar (only for received messages and only show for first message in group)
@@ -684,11 +737,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 radius: 16,
                 backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
                 child: Text(
-                  widget.conversationName.isNotEmpty 
-                    ? widget.conversationName[0].toUpperCase() 
-                    : "?",
+                  widget.conversationName.isNotEmpty
+                      ? widget.conversationName[0].toUpperCase()
+                      : "?",
                   style: TextStyle(
-                    fontSize: 12, 
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
                     color: const Color(0xFF2A64F6),
                   ),
@@ -697,7 +750,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             )
           else if (!isSent && !showSenderInfo)
             SizedBox(width: 40), // Space for alignment when avatar is not shown
-          
+
           // Bubble content
           Flexible(
             child: Container(
@@ -705,9 +758,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
               decoration: BoxDecoration(
-                color: isSent 
-                    ? const Color(0xFF2A64F6) 
-                    : Colors.grey[100],
+                color: isSent ? const Color(0xFF2A64F6) : Colors.grey[100],
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(18),
                   topRight: Radius.circular(18),
@@ -734,7 +785,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       fontSize: 15,
                     ),
                   ),
-                  
+
                   // Time and status
                   SizedBox(height: 4),
                   Row(
@@ -744,11 +795,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       Text(
                         timeString,
                         style: TextStyle(
-                          color: isSent ? Colors.white.withOpacity(0.7) : Colors.grey[600],
+                          color: isSent
+                              ? Colors.white.withOpacity(0.7)
+                              : Colors.grey[600],
                           fontSize: 10,
                         ),
                       ),
-                      
+
                       // Message status indicator (only for sent messages)
                       if (isSent) ...[
                         SizedBox(width: 4),
@@ -768,7 +821,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildStatusIndicator(String? status) {
     IconData iconData;
     Color iconColor;
-    
+
     switch (status) {
       case 'sent':
         iconData = Icons.check;
@@ -786,14 +839,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         iconData = Icons.access_time;
         iconColor = Colors.white.withOpacity(0.7);
     }
-    
+
     return Icon(
       iconData,
       size: 14,
       color: iconColor,
     );
   }
- Widget _buildMessageInput() {
+
+  Widget _buildMessageInput() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       decoration: BoxDecoration(
@@ -822,7 +876,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     hintText: 'Message',
                     hintStyle: TextStyle(color: Colors.grey[500], fontSize: 15),
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   ),
                   style: TextStyle(fontSize: 15),
                   maxLines: null,
@@ -831,7 +886,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            
+
             // Send button
             Container(
               margin: EdgeInsets.only(left: 8),
@@ -848,7 +903,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
     );
   }
-
 
   String _formatDate(DateTime date) {
     final now = DateTime.now();
@@ -868,8 +922,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   bool _isSameDay(DateTime date1, DateTime date2) {
-    return date1.year == date2.year && 
-           date1.month == date2.month && 
-           date1.day == date2.day;
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 }

@@ -9,28 +9,29 @@ class WelcomeScreen extends StatefulWidget {
   _WelcomeScreenState createState() => _WelcomeScreenState();
 }
 
-class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProviderStateMixin {
+class _WelcomeScreenState extends State<WelcomeScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
-  
+
   @override
   void initState() {
     super.initState();
-    
+
     // Set up animations
     _animationController = AnimationController(
       vsync: this,
       duration: Duration(milliseconds: 1200),
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
         curve: Interval(0.2, 0.8, curve: Curves.easeOut),
       ),
     );
-    
+
     _slideAnimation = Tween<Offset>(
       begin: Offset(0, 0.5),
       end: Offset.zero,
@@ -40,13 +41,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
         curve: Interval(0.2, 0.7, curve: Curves.easeOutCubic),
       ),
     );
-    
+
     // Start animation after a short delay
     Future.delayed(Duration(milliseconds: 100), () {
       _animationController.forward();
     });
   }
-  
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -76,29 +77,42 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                           width: 120,
                           height: 120,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF2A64F6).withOpacity(0.1),
+                            color: Colors.white,
                             shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 10,
+                                spreadRadius: 1,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          child: Icon(
-                            Icons.chat_bubble_outline,
-                            size: 60,
-                            color: const Color(0xFF2A64F6),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(60),
+                            child: Image.asset(
+                              'assets/icon.png',
+                              width: 120,
+                              height: 120,
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         ),
                         SizedBox(height: 28),
-                        
+
                         // App name
                         Text(
                           'Techniq8Chat',
                           style: TextStyle(
                             fontSize: 36,
                             fontWeight: FontWeight.bold,
-                            color: const Color(0xFF2A64F6),
+                            color: const Color(
+                                0xFF0A3A59), // Changed color to #0A3A59
                             letterSpacing: 0.5,
                           ),
                         ),
                         SizedBox(height: 16),
-                        
+
                         // Tagline
                         Text(
                           'Connect with friends and colleagues in real-time',
@@ -113,9 +127,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                     ),
                   ),
                 ),
-                
+
                 SizedBox(height: 80),
-                
+
                 // Get Started button
                 FadeTransition(
                   opacity: _fadeAnimation,
@@ -125,7 +139,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                       onPressed: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => LoginScreen()),
+                          MaterialPageRoute(
+                              builder: (context) => LoginScreen()),
                         );
                       },
                       style: ElevatedButton.styleFrom(
@@ -139,14 +154,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                       ),
                       child: Text(
                         'Sign In',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
                 ),
-                
+
                 SizedBox(height: 20),
-                
+
                 // Register button
                 FadeTransition(
                   opacity: _fadeAnimation,
@@ -156,27 +172,30 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                       onPressed: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => RegisterScreen()),
+                          MaterialPageRoute(
+                              builder: (context) => RegisterScreen()),
                         );
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF2A64F6),
                         minimumSize: Size(double.infinity, 56),
-                        side: BorderSide(color: const Color(0xFF2A64F6), width: 1.5),
+                        side: BorderSide(
+                            color: const Color(0xFF2A64F6), width: 1.5),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
                       child: Text(
                         'Create Account',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w500),
                       ),
                     ),
                   ),
                 ),
-                
+
                 SizedBox(height: 40),
-                
+
                 // Version info
                 FadeTransition(
                   opacity: _fadeAnimation,

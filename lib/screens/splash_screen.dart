@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
-import 'conversations_screen.dart';
+import 'bottom_navigation_screen.dart';
 import 'welcome_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -55,9 +55,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         await authService.loadUserData();
         
         if (authService.currentUser != null) {
-          // Valid token, go to conversations screen
+          // Valid token, go to bottom navigation screen instead of just conversations
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => ConversationsScreen()),
+            MaterialPageRoute(builder: (_) => BottomNavigationScreen()),
           );
           return;
         }
