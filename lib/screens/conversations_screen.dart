@@ -299,7 +299,7 @@ class _ConversationsScreenState extends State<ConversationsScreen>
   titleSpacing: 16, // Add padding to the left of the title
   centerTitle: false, // Left align the title
   title: Image.asset(
-    'assets/logo.png', // Make sure this image exists in your assets
+    'assets/TQ.png', // Make sure this image exists in your assets
     height: 32, // Appropriate size for the app bar
     fit: BoxFit.contain,
     alignment: Alignment.centerLeft,
@@ -594,7 +594,7 @@ class _ConversationsScreenState extends State<ConversationsScreen>
             backgroundImage: conversation.profilePicture != null &&
                     conversation.profilePicture!.isNotEmpty &&
                     !conversation.profilePicture!.contains('default-avatar')
-                ? NetworkImage('http://192.168.100.76:4400/${conversation.profilePicture}')
+                ? NetworkImage('http://192.168.100.5:4400/${conversation.profilePicture}')
                 : null,
             child: (conversation.profilePicture == null ||
                     conversation.profilePicture!.isEmpty ||

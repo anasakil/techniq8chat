@@ -1,4 +1,3 @@
-// services/socket_service.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
@@ -13,7 +12,7 @@ class SocketService {
   // Socket connection
   IO.Socket? _socket;
   bool isConnected = false;
-  final String serverUrl = 'http://192.168.100.76:4400';
+  final String serverUrl = 'http://192.168.100.5:4400';
 
   // Service dependencies
   final HiveStorage hiveStorage = HiveStorage();
@@ -28,11 +27,12 @@ class SocketService {
   final _onUserStatus = StreamController<Map<String, String>>.broadcast();
   final _onTyping = StreamController<String>.broadcast();
   
-  // WebRTC Stream controllers
+  // WebRTC Stream controllers - NEW
   final _onWebRTCOffer = StreamController<Map<String, dynamic>>.broadcast();
   final _onWebRTCAnswer = StreamController<Map<String, dynamic>>.broadcast();
   final _onWebRTCIceCandidate = StreamController<Map<String, dynamic>>.broadcast();
   final _onWebRTCEndCall = StreamController<String>.broadcast();
+  final _onWebRTCCallRejected = StreamController<String>.broadcast();
 
   // Streams
   Stream<bool> get onConnected => _onConnected.stream;
@@ -41,11 +41,12 @@ class SocketService {
   Stream<Map<String, String>> get onUserStatus => _onUserStatus.stream;
   Stream<String> get onTyping => _onTyping.stream;
   
-  // WebRTC Streams
+  // WebRTC Streams - NEW
   Stream<Map<String, dynamic>> get onWebRTCOffer => _onWebRTCOffer.stream;
   Stream<Map<String, dynamic>> get onWebRTCAnswer => _onWebRTCAnswer.stream;
   Stream<Map<String, dynamic>> get onWebRTCIceCandidate => _onWebRTCIceCandidate.stream;
   Stream<String> get onWebRTCEndCall => _onWebRTCEndCall.stream;
+  Stream<String> get onWebRTCCallRejected => _onWebRTCCallRejected.stream;
 
   // Message queue for when socket is disconnected
   final List<Map<String, dynamic>> _messageQueue = [];
@@ -127,51 +128,48 @@ class SocketService {
     });
 
     // Listen for new messages
-_socket?.on('new_message', (data) async {
-  print('New message received: $data');
-  if (currentUser == null) return;
+    _socket?.on('new_message', (data) async {
+      print('New message received: $data');
+      if (currentUser == null) return;
 
-  try {
-    // Extract sender name from data if available
-    String? senderName;
-    if (data is Map) {
-      // Check for sender name in various possible locations
-      if (data['senderName'] != null) {
-        senderName = data['senderName'].toString();
-      } else if (data['sender'] is Map && data['sender']['username'] != null) {
-        senderName = data['sender']['username'].toString();
+      try {
+        // Extract sender name from data if available
+        String? senderName;
+        if (data is Map) {
+          // Check for sender name in various possible locations
+          if (data['senderName'] != null) {
+            senderName = data['senderName'].toString();
+          } else if (data['sender'] is Map && data['sender']['username'] != null) {
+            senderName = data['sender']['username'].toString();
+          }
+          
+          // If sender is the same as current user, use our username
+          final senderId = data['sender'] is Map ? data['sender']['_id'] : data['sender'];
+          if (senderId == currentUser!.id) {
+            senderName = currentUser!.username;
+          }
+        }
+
+        // Create message object
+        final message = Message.fromSocketData(data, currentUser!.id);
+
+        // Save to Hive storage
+        print('Saving message to Hive storage: ${message.id}, sender: ${message.senderName ?? "unknown"}');
+        await hiveStorage.saveMessage(message);
+
+        // Explicitly update the conversation with this message
+        await _updateConversation(message);
+
+        // Broadcast the new message
+        _onNewMessage.add(message);
+
+        // Mark as delivered
+        print('Marking message as delivered: ${message.id}');
+        markMessageAsDelivered(message.id, message.senderId);
+      } catch (e) {
+        print('Error processing new message: $e');
       }
-      
-      // If sender is the same as current user, use our username
-      final senderId = data['sender'] is Map ? data['sender']['_id'] : data['sender'];
-      if (senderId == currentUser!.id) {
-        senderName = currentUser!.username;
-      }
-      
-      // If we still don't have a sender name, check if we can get user info
-      // This would require additional API calls in a real implementation
-    }
-
-    // Create message object
-    final message = Message.fromSocketData(data, currentUser!.id);
-
-    // Save to Hive storage
-    print('Saving message to Hive storage: ${message.id}, sender: ${message.senderName ?? "unknown"}');
-    await hiveStorage.saveMessage(message);
-
-    // Explicitly update the conversation with this message
-    await _updateConversation(message);
-
-    // Broadcast the new message
-    _onNewMessage.add(message);
-
-    // Mark as delivered
-    print('Marking message as delivered: ${message.id}');
-    markMessageAsDelivered(message.id, message.senderId);
-  } catch (e) {
-    print('Error processing new message: $e');
-  }
-});
+    });
 
     // Listen for message delivery status
     _socket?.on('message_delivered', (data) async {
@@ -293,7 +291,7 @@ _socket?.on('new_message', (data) async {
       }
     });
 
-    // WebRTC related events
+    // WebRTC related events - NEW
     _socket?.on('webrtc_offer', (data) {
       print('WebRTC offer received: $data');
       _onWebRTCOffer.add(data);
@@ -314,98 +312,108 @@ _socket?.on('new_message', (data) async {
       final senderId = data['senderId'] ?? '';
       _onWebRTCEndCall.add(senderId);
     });
+    
+    _socket?.on('webrtc_call_rejected', (data) {
+      print('WebRTC call rejected received');
+      final receiverId = data['receiverId'] ?? '';
+      _onWebRTCCallRejected.add(receiverId);
+    });
+    
+    // Incoming call event - NEW
+    _socket?.on('incoming_call', (data) {
+      print('Incoming call received: $data');
+      // This will be handled by UI layer
+    });
   }
 
-  // In socket_service.dart, update the _updateConversation method:
-Future<void> _updateConversation(Message message) async {
-  if (currentUser == null) return;
-  
-  try {
-    // Determine the other user ID (conversation partner)
-    final conversationId = message.isSent ? message.receiverId : message.senderId;
+  Future<void> _updateConversation(Message message) async {
+    if (currentUser == null) return;
     
-    print('Updating conversation for ID: $conversationId with message: "${message.content}"');
-    
-    // Get existing conversation if any
-    final conversations = await hiveStorage.getConversations();
-    final existingConversationIndex = conversations.indexWhere((c) => c.id == conversationId);
-    
-    if (existingConversationIndex >= 0) {
-      // Update existing conversation
-      final existingConversation = conversations[existingConversationIndex];
+    try {
+      // Determine the other user ID (conversation partner)
+      final conversationId = message.isSent ? message.receiverId : message.senderId;
       
-      // Calculate unread count
-      int newUnreadCount = existingConversation.unreadCount;
-      if (!message.isSent && message.senderId != currentUser!.id) {
-        newUnreadCount += 1;
-      }
+      print('Updating conversation for ID: $conversationId with message: "${message.content}"');
       
-      // Create updated conversation
-      final updatedConversation = existingConversation.copyWith(
-        lastMessage: message.content,
-        lastMessageTime: message.createdAt,
-        unreadCount: newUnreadCount,
-      );
+      // Get existing conversation if any
+      final conversations = await hiveStorage.getConversations();
+      final existingConversationIndex = conversations.indexWhere((c) => c.id == conversationId);
       
-      // Save updated conversation
-      await hiveStorage.upsertConversation(updatedConversation);
-      print('Updated existing conversation with ID: $conversationId, lastMessage: "${message.content}"');
-    } else {
-      // Create new conversation with name from message if available
-      // If no name is available, fetch user details from API
-      String conversationName;
-      String? profilePicture;
-      
-      if (message.senderName != null && message.senderName!.isNotEmpty) {
-        // Use sender name from message if available
-        conversationName = message.senderName!;
-      } else {
-        // Fetch user details from the API
-        try {
-          final response = await http.get(
-            Uri.parse('http://192.168.100.76:4400/api/users/$conversationId'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${currentUser!.token}',
-            },
-          );
-          
-          if (response.statusCode == 200) {
-            final userData = json.decode(response.body);
-            conversationName = userData['username'] ?? 'Unknown User';
-            profilePicture = userData['profilePicture'];
-            print('Fetched user details for $conversationId: $conversationName');
-          } else {
-            conversationName = 'User ($conversationId)';
-            print('Failed to fetch user details, status: ${response.statusCode}');
-          }
-        } catch (e) {
-          // Fallback if API request fails
-          conversationName = 'User ($conversationId)';
-          print('Error fetching user details: $e');
+      if (existingConversationIndex >= 0) {
+        // Update existing conversation
+        final existingConversation = conversations[existingConversationIndex];
+        
+        // Calculate unread count
+        int newUnreadCount = existingConversation.unreadCount;
+        if (!message.isSent && message.senderId != currentUser!.id) {
+          newUnreadCount += 1;
         }
+        
+        // Create updated conversation
+        final updatedConversation = existingConversation.copyWith(
+          lastMessage: message.content,
+          lastMessageTime: message.createdAt,
+          unreadCount: newUnreadCount,
+        );
+        
+        // Save updated conversation
+        await hiveStorage.upsertConversation(updatedConversation);
+        print('Updated existing conversation with ID: $conversationId, lastMessage: "${message.content}"');
+      } else {
+        // Create new conversation with name from message if available
+        // If no name is available, fetch user details from API
+        String conversationName;
+        String? profilePicture;
+        
+        if (message.senderName != null && message.senderName!.isNotEmpty) {
+          // Use sender name from message if available
+          conversationName = message.senderName!;
+        } else {
+          // Fetch user details from the API
+          try {
+            final response = await http.get(
+              Uri.parse('http://192.168.100.5:4400/api/users/$conversationId'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ${currentUser!.token}',
+              },
+            );
+            
+            if (response.statusCode == 200) {
+              final userData = json.decode(response.body);
+              conversationName = userData['username'] ?? 'Unknown User';
+              profilePicture = userData['profilePicture'];
+              print('Fetched user details for $conversationId: $conversationName');
+            } else {
+              conversationName = 'User ($conversationId)';
+              print('Failed to fetch user details, status: ${response.statusCode}');
+            }
+          } catch (e) {
+            // Fallback if API request fails
+            conversationName = 'User ($conversationId)';
+            print('Error fetching user details: $e');
+          }
+        }
+
+        final newConversation = Conversation(
+          id: conversationId,
+          name: conversationName,
+          lastMessage: message.content,
+          lastMessageTime: message.createdAt,
+          status: 'offline',
+          unreadCount: message.isSent ? 0 : 1,
+          profilePicture: profilePicture,
+        );
+        
+        await hiveStorage.upsertConversation(newConversation);
+        print('Created new conversation with ID: $conversationId, name: "$conversationName", lastMessage: "${message.content}"');
       }
-
-      final newConversation = Conversation(
-        id: conversationId,
-        name: conversationName,
-        lastMessage: message.content,
-        lastMessageTime: message.createdAt,
-        status: 'offline',
-        unreadCount: message.isSent ? 0 : 1,
-        profilePicture: profilePicture,
-      );
-      
-      await hiveStorage.upsertConversation(newConversation);
-      print('Created new conversation with ID: $conversationId, name: "$conversationName", lastMessage: "${message.content}"');
+    } catch (e) {
+      print('Error updating conversation for message: $e');
     }
-  } catch (e) {
-    print('Error updating conversation for message: $e');
   }
-}
 
-
-  // WebRTC signaling methods
+  // WebRTC signaling methods - NEW
   void sendWebRTCOffer(String receiverId, dynamic offer, String callType) {
     if (!isConnected) {
       print('Cannot send WebRTC offer: socket disconnected');
@@ -419,7 +427,7 @@ Future<void> _updateConversation(Message message) async {
       'callType': callType
     });
   }
-
+  
   void sendWebRTCAnswer(String receiverId, dynamic answer) {
     if (!isConnected) {
       print('Cannot send WebRTC answer: socket disconnected');
@@ -432,7 +440,7 @@ Future<void> _updateConversation(Message message) async {
       'answer': answer
     });
   }
-
+  
   void sendWebRTCIceCandidate(String receiverId, dynamic candidate) {
     if (!isConnected) {
       print('Cannot send WebRTC ICE candidate: socket disconnected');
@@ -445,7 +453,7 @@ Future<void> _updateConversation(Message message) async {
       'candidate': candidate
     });
   }
-
+  
   void sendWebRTCEndCall(String receiverId) {
     if (!isConnected) {
       print('Cannot send WebRTC end call: socket disconnected');
@@ -457,67 +465,79 @@ Future<void> _updateConversation(Message message) async {
       'receiverId': receiverId
     });
   }
+  
+  void sendWebRTCRejectCall(String callerId) {
+    if (!isConnected) {
+      print('Cannot send WebRTC reject call: socket disconnected');
+      return;
+    }
+    
+    print('Sending WebRTC reject call to $callerId');
+    _socket?.emit('webrtc_reject_call', {
+      'callerId': callerId
+    });
+  }
 
   // Send a message
-Future<void> sendMessage(String receiverId, String content, {String? tempId}) async {
-  print('Sending message to $receiverId: $content (tempId: $tempId)');
+  Future<void> sendMessage(String receiverId, String content, {String? tempId}) async {
+    print('Sending message to $receiverId: $content (tempId: $tempId)');
 
-  // Ensure we always have the current user before proceeding
-  if (currentUser == null) {
-    print('Cannot send message: No current user available');
-    return;
-  }
+    // Ensure we always have the current user before proceeding
+    if (currentUser == null) {
+      print('Cannot send message: No current user available');
+      return;
+    }
 
-  // Store message in Hive storage first (optimistic update)
-  if (tempId != null) {
-    final tempMessage = Message(
-      id: tempId,
-      senderId: currentUser!.id,
-      receiverId: receiverId,
-      content: content,
-      contentType: 'text',
-      createdAt: DateTime.now(),
-      status: 'sending',
-      isSent: true,
-      senderName: currentUser!.username, // Include the sender's username
-    );
+    // Store message in Hive storage first (optimistic update)
+    if (tempId != null) {
+      final tempMessage = Message(
+        id: tempId,
+        senderId: currentUser!.id,
+        receiverId: receiverId,
+        content: content,
+        contentType: 'text',
+        createdAt: DateTime.now(),
+        status: 'sending',
+        isSent: true,
+        senderName: currentUser!.username, // Include the sender's username
+      );
 
-    await hiveStorage.saveMessage(tempMessage);
-    
-    // Also update conversation for this message
-    await _updateConversation(tempMessage);
-  }
+      await hiveStorage.saveMessage(tempMessage);
+      
+      // Also update conversation for this message
+      await _updateConversation(tempMessage);
+    }
 
-  if (!isConnected) {
-    print('Socket not connected, queueing message for later');
-    // Queue message for later
-    _messageQueue.add({
+    if (!isConnected) {
+      print('Socket not connected, queueing message for later');
+      // Queue message for later
+      _messageQueue.add({
+        'receiverId': receiverId,
+        'message': content,
+        'messageId': tempId,
+        'senderName': currentUser?.username, // Include sender name in the queue
+      });
+
+      // Try to reconnect the socket
+      _socket?.connect();
+      return;
+    }
+
+    // Send directly through socket
+    final messageData = {
       'receiverId': receiverId,
       'message': content,
-      'messageId': tempId,
-      'senderName': currentUser?.username, // Include sender name in the queue
-    });
+      'senderName': currentUser!.username, // Include sender name in the socket emission
+    };
 
-    // Try to reconnect the socket
-    _socket?.connect();
-    return;
+    // Add temp ID if available
+    if (tempId != null) {
+      messageData['messageId'] = tempId;
+    }
+
+    print('Emitting send_message event: $messageData');
+    _socket?.emit('send_message', messageData);
   }
-
-  // Send directly through socket
-  final messageData = {
-    'receiverId': receiverId,
-    'message': content,
-    'senderName': currentUser!.username, // Include sender name in the socket emission
-  };
-
-  // Add temp ID if available
-  if (tempId != null) {
-    messageData['messageId'] = tempId;
-  }
-
-  print('Emitting send_message event: $messageData');
-  _socket?.emit('send_message', messageData);
-}
 
   // Process queued messages when socket reconnects
   void _processMessageQueue() {
@@ -542,8 +562,7 @@ Future<void> sendMessage(String receiverId, String content, {String? tempId}) as
       return;
     }
 
-    print(
-        'Marking message as delivered - messageId: $messageId, senderId: $senderId');
+    print('Marking message as delivered - messageId: $messageId, senderId: $senderId');
     _socket?.emit('message_status_update', {
       'messageId': messageId,
       'status': 'delivered',
@@ -558,8 +577,7 @@ Future<void> sendMessage(String receiverId, String content, {String? tempId}) as
       return;
     }
 
-    print(
-        'Marking message as read - messageId: $messageId, senderId: $senderId');
+    print('Marking message as read - messageId: $messageId, senderId: $senderId');
     _socket?.emit('message_read', {
       'messageId': messageId,
       'senderId': senderId,
@@ -621,6 +639,7 @@ Future<void> sendMessage(String receiverId, String content, {String? tempId}) as
     _onWebRTCAnswer.close();
     _onWebRTCIceCandidate.close();
     _onWebRTCEndCall.close();
+    _onWebRTCCallRejected.close();
     
     disconnect();
   }

@@ -34,7 +34,7 @@ class UserItem extends StatelessWidget {
       try {
         return CircleAvatar(
           backgroundColor: Colors.grey[200],
-          backgroundImage: NetworkImage('http://192.168.100.76:4400/${user.profilePicture}'),
+          backgroundImage: NetworkImage('http://192.168.100.5:4400/${user.profilePicture}'),
           // Fallback for when image fails to load
           onBackgroundImageError: (_, __) => CircleAvatar(
             backgroundColor: Colors.blue.shade300,

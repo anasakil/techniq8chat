@@ -442,7 +442,7 @@ PreferredSizeWidget _buildAppBar() {
               backgroundImage: widget.profilePicture != null && 
                            widget.profilePicture!.isNotEmpty &&
                            !widget.profilePicture!.contains('default-avatar')
-                  ? NetworkImage('http://192.168.100.76:4400/${widget.profilePicture}')
+                  ? NetworkImage('http://192.168.100.5:4400/${widget.profilePicture}')
                   : null,
               child: (widget.profilePicture == null || 
                      widget.profilePicture!.isEmpty ||
