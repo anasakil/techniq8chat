@@ -41,7 +41,7 @@ class _UserDetailsPageState extends State<UserDetailsPage> {
     
     if (currentUser != null) {
       _userRepository = UserRepository(
-        baseUrl: 'http://192.168.100.5:4400',
+        baseUrl: 'http://192.168.100.96:4400',
         token: currentUser.token,
       );
     }
@@ -209,7 +209,7 @@ class _UserDetailsPageState extends State<UserDetailsPage> {
                             radius: 60,
                             backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
                             backgroundImage: hasPicture
-                                ? NetworkImage('http://192.168.100.5:4400/$profilePicture')
+                                ? NetworkImage('http://192.168.100.96:4400/$profilePicture')
                                 : null,
                             child: !hasPicture && username.isNotEmpty
                                 ? Text(

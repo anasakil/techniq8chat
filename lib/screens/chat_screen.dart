@@ -500,7 +500,7 @@ void _startCall(CallType callType) async {
                         widget.profilePicture!.isNotEmpty &&
                         !widget.profilePicture!.contains('default-avatar')
                     ? NetworkImage(
-                        'http://192.168.100.5:4400/${widget.profilePicture}')
+                        'http://192.168.100.96:4400/${widget.profilePicture}')
                     : null,
                 child: (widget.profilePicture == null ||
                             widget.profilePicture!.isEmpty ||

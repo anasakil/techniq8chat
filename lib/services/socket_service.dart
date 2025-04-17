@@ -12,7 +12,7 @@ class SocketService {
   // Socket connection
   IO.Socket? _socket;
   bool isConnected = false;
-  final String serverUrl = 'http://192.168.100.5:4400';
+  final String serverUrl = 'http://192.168.100.96:4400';
 
   // Service dependencies
   final HiveStorage hiveStorage = HiveStorage();
@@ -357,7 +357,7 @@ class SocketService {
           // Fetch user details from the API
           try {
             final response = await http.get(
-              Uri.parse('http://192.168.100.5:4400/api/users/$conversationId'),
+              Uri.parse('http://192.168.100.96:4400/api/users/$conversationId'),
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ${currentUser!.token}',

@@ -1,7 +1,7 @@
 // screens/register_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:techniq8chat/screens/bottom_navigation_screen.dart'; // Updated import
+import 'package:techniq8chat/screens/bottom_navigation_screen.dart';
 import '../services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -14,8 +14,12 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _keyController = TextEditingController();  // Added key controller
   bool _isLoading = false;
   String _errorMessage = '';
+  bool _isValidatingKey = false;  // For key validation loading state
+  String? _keyValidationMessage;  // For key validation message
+  bool? _isKeyValid;  // For tracking key validation result
   
   // Add animation controller for consistent design with login screen
   late AnimationController _animationController;
@@ -46,8 +50,39 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _keyController.dispose();  // Dispose key controller
     _animationController.dispose();
     super.dispose();
+  }
+
+  // Validate the key when input is complete
+  Future<void> _validateKey() async {
+    if (_keyController.text.length != 10) return;
+    
+    setState(() {
+      _isValidatingKey = true;
+      _keyValidationMessage = null;
+      _isKeyValid = null;
+    });
+    
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final isValid = await authService.checkKeyValidity(_keyController.text);
+      
+      setState(() {
+        _isKeyValid = isValid;
+        _keyValidationMessage = isValid 
+            ? 'Valid registration key' 
+            : 'Invalid or already used key';
+        _isValidatingKey = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isKeyValid = false;
+        _keyValidationMessage = 'Error checking key';
+        _isValidatingKey = false;
+      });
+    }
   }
 
   Future<void> _register() async {
@@ -64,6 +99,7 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
         _usernameController.text,
         _emailController.text,
         _passwordController.text,
+        _keyController.text,  // Add key to register method
       );
       
       // Navigate to bottom navigation screen instead of conversations screen
@@ -217,6 +253,77 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                     ),
                   ),
                   
+                  SizedBox(height: 16),
+                  
+                  // Registration Key Field
+                  FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: _buildInputField(
+                      controller: _keyController,
+                      hintText: 'Registration Key (10 digits)',
+                      icon: Icons.key_outlined,
+                      keyboardType: TextInputType.number,
+                      suffixIcon: _isValidatingKey 
+                          ? SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : _isKeyValid != null
+                              ? Icon(
+                                  _isKeyValid! ? Icons.check_circle : Icons.error,
+                                  color: _isKeyValid! ? Colors.green : Colors.red,
+                                )
+                              : null,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your registration key';
+                        }
+                        if (value.length != 10) {
+                          return 'Key must be exactly 10 digits';
+                        }
+                        final keyRegex = RegExp(r'^\d{10}$');
+                        if (!keyRegex.hasMatch(value)) {
+                          return 'Key must be 10 numeric digits only';
+                        }
+                        // If key was validated and is invalid
+                        if (_isKeyValid != null && !_isKeyValid!) {
+                          return 'Please enter a valid registration key';
+                        }
+                        return null;
+                      },
+                      onChanged: (value) {
+                        // Clear validation when changed
+                        if (_isKeyValid != null) {
+                          setState(() {
+                            _isKeyValid = null;
+                            _keyValidationMessage = null;
+                          });
+                        }
+                        // Auto-validate when 10 digits entered
+                        if (value.length == 10) {
+                          _validateKey();
+                        }
+                      },
+                    ),
+                  ),
+                  
+                  // Key validation message
+                  if (_keyValidationMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4.0, left: 8.0),
+                      child: Text(
+                        _keyValidationMessage!,
+                        style: TextStyle(
+                          color: _isKeyValid == true ? Colors.green : Colors.red,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  
                   SizedBox(height: 10),
                   
                   // Error Message
@@ -306,6 +413,7 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
     Widget? suffixIcon,
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
+    Function(String)? onChanged,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -354,6 +462,7 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
           contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
         ),
         validator: validator,
+        onChanged: onChanged,
       ),
     );
   }

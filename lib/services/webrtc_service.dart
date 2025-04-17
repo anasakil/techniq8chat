@@ -196,7 +196,7 @@ class WebRTCService {
     
     try {
       final response = await http.get(
-        Uri.parse('http://192.168.100.5:4400/api/users/$_remoteUserId'),
+        Uri.parse('http://192.168.100.96:4400/api/users/$_remoteUserId'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${_currentUser!.token}',

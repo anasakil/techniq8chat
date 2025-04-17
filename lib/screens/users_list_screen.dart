@@ -63,7 +63,7 @@ class _UsersListScreenState extends State<UsersListScreen> with SingleTickerProv
       
       // Make API request to get all users
       final response = await http.get(
-        Uri.parse('http://192.168.100.5:4400/api/users/all'),
+        Uri.parse('http://192.168.100.96:4400/api/users/all'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${currentUser.token}',
@@ -330,7 +330,7 @@ class _UsersListScreenState extends State<UsersListScreen> with SingleTickerProv
                     radius: 26,
                     backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
                     backgroundImage: hasPicture
-                        ? NetworkImage('http://192.168.100.5:4400/${user.profilePicture}')
+                        ? NetworkImage('http://192.168.100.96:4400/${user.profilePicture}')
                         : null,
                     child: !hasPicture && user.username.isNotEmpty
                         ? Text(

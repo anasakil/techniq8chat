@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techniq8chat/models/user_model.dart';
 
 class AuthService with ChangeNotifier {
-  final String baseUrl = 'http://192.168.100.5:4400';
+  final String baseUrl = 'http://192.168.100.96:4400';
   User? _currentUser;
 
   User? get currentUser => _currentUser;
@@ -38,8 +38,8 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  // Register user
-  Future<User> register(String username, String email, String password) async {
+  // Register user with key
+  Future<User> register(String username, String email, String password, String key) async {
     final response = await http.post(
       Uri.parse('$baseUrl/api/auth/register'),
       headers: {'Content-Type': 'application/json'},
@@ -47,6 +47,7 @@ class AuthService with ChangeNotifier {
         'username': username,
         'email': email,
         'password': password,
+        'key': key, // Add the registration key
       }),
     );
 
@@ -64,6 +65,21 @@ class AuthService with ChangeNotifier {
       final error = json.decode(response.body);
       throw Exception(error['message'] ?? 'Registration failed');
     }
+  }
+
+  // Check if a key is valid
+  Future<bool> checkKeyValidity(String key) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/auth/check-key'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'key': key}),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return data['valid'] ?? false;
+    }
+    return false;
   }
 
   // Validate token and get user data

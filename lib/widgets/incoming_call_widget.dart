@@ -159,7 +159,7 @@ class _IncomingCallWidgetState extends State<IncomingCallWidget> with SingleTick
                       backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
                       backgroundImage: widget.profilePicture != null && 
                                       widget.profilePicture!.isNotEmpty
-                          ? NetworkImage('http://192.168.100.5:4400/${widget.profilePicture}')
+                          ? NetworkImage('http://192.168.100.96:4400/${widget.profilePicture}')
                           : null,
                       child: (widget.profilePicture == null || widget.profilePicture!.isEmpty) && 
                               widget.callerName.isNotEmpty

@@ -357,7 +357,7 @@ class _CallScreenState extends State<CallScreen> {
                         radius: 40,
                         backgroundColor: Colors.grey[300],
                         backgroundImage: widget.profilePicture != null && widget.profilePicture!.isNotEmpty
-                            ? NetworkImage('http://192.168.100.5:4400/${widget.profilePicture}')
+                            ? NetworkImage('http://192.168.100.96:4400/${widget.profilePicture}')
                             : null,
                         child: (widget.profilePicture == null || widget.profilePicture!.isEmpty)
                             ? Text(

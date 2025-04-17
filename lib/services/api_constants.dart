@@ -1,7 +1,7 @@
 
 // class ApiConstants {
 //   // Base URL
-//   static const String baseUrl = 'http://192.168.100.5:4400/api';
+//   static const String baseUrl = 'http://192.168.100.96:4400/api';
   
 //   // Auth endpoints
 //   static const String login = '$baseUrl/auth/login';
@@ -25,7 +25,7 @@
 //   static const String conversationsApi = '$baseUrl/conversations';
   
 //   // Socket server URL
-//   static const String socketUrl = 'http://192.168.100.5:4400';
+//   static const String socketUrl = 'http://192.168.100.96:4400';
 
   
 // }
