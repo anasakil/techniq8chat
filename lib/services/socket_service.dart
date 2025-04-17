@@ -83,9 +83,6 @@ class SocketService {
     });
 
     _setupSocketListeners();
-
-    // Start a periodic check for connection
-    _startConnectionCheck();
   }
 
   void _startConnectionCheck() {
@@ -97,6 +94,7 @@ class SocketService {
       }
     });
   }
+
 
   // Set up socket event listeners
   void _setupSocketListeners() {
@@ -415,19 +413,17 @@ class SocketService {
 
   // WebRTC signaling methods - NEW
   void sendWebRTCOffer(String receiverId, dynamic offer, String callType) {
-    if (!isConnected) {
-      print('Cannot send WebRTC offer: socket disconnected');
-      return;
-    }
-    
-    print('Sending WebRTC offer to $receiverId');
-    _socket?.emit('webrtc_offer', {
-      'receiverId': receiverId,
-      'offer': offer,
-      'callType': callType
-    });
+  if (!isConnected) {
+    print('Cannot send WebRTC offer: socket disconnected');
+    return;
   }
   
+  _socket?.emit('webrtc_offer', {
+    'receiverId': receiverId,
+    'offer': offer,
+    'callType': callType
+  });
+}
   void sendWebRTCAnswer(String receiverId, dynamic answer) {
     if (!isConnected) {
       print('Cannot send WebRTC answer: socket disconnected');

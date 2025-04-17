@@ -50,7 +50,16 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void initState() {
     super.initState();
+     final authService = Provider.of<AuthService>(context, listen: false);
+    final currentUser = authService.currentUser;
+    
+    if (currentUser == null) {
+      // Handle error: no current user
+      Navigator.of(context).pop();
+      return;
+    }
     _webRTCService = WebRTCService();
+    _webRTCService.setCurrentUser(currentUser);
     
     // Initialize renderers
     _initRenderers();

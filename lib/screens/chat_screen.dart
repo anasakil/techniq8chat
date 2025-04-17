@@ -4,12 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:techniq8chat/models/user_model.dart';
+import 'package:techniq8chat/screens/call_screen.dart';
 import 'package:techniq8chat/screens/user_details_page.dart';
 import '../models/message.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
 import '../services/hive_storage.dart';
 import 'dart:math' as Math;
+import 'package:techniq8chat/services/webrtc_service.dart';
+import 'package:techniq8chat/screens/call_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -55,6 +58,59 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _initializeServices();
     _markConversationAsRead();
   }
+
+
+  void _initiateAudioCall() {
+  _startCall(CallType.audio);
+}
+
+void _initiateVideoCall() {
+  _startCall(CallType.video);
+}
+void _startCall(CallType callType) async {
+  // Get the current user from AuthService
+  final authService = Provider.of<AuthService>(context, listen: false);
+  final currentUser = authService.currentUser;
+
+  if (currentUser == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('User not logged in')),
+    );
+    return;
+  }
+
+  // Initialize or set the current user in WebRTC service
+  final webRTCService = WebRTCService();
+  webRTCService.setCurrentUser(currentUser);
+
+  try {
+    final success = await webRTCService.initiateCall(widget.conversationId, callType);
+    
+    if (success) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CallScreen(
+            userId: widget.conversationId,
+            userName: widget.conversationName,
+            profilePicture: widget.profilePicture,
+            callType: callType,
+            isOutgoing: true,
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start call')),
+      );
+    }
+  } catch (e) {
+    print('Error starting call: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error starting call')),
+    );
+  }
+}
 
   Future<void> _markConversationAsRead() async {
     try {
@@ -396,110 +452,109 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
     );
   }
-PreferredSizeWidget _buildAppBar() {
-  return AppBar(
-    elevation: 0,
-    backgroundColor: Colors.white,
-    foregroundColor: Colors.black87,
-    titleSpacing: 0,
-    leading: IconButton(
-      icon: Icon(Icons.arrow_back_ios_new, size: 20),
-      onPressed: () => Navigator.of(context).pop(),
-    ),
-    title: GestureDetector(
-      onTap: () {
-        // Navigate to user details page when tapping on the user info
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => UserDetailsPage(
-              userId: widget.conversationId,
-              initialUsername: widget.conversationName,
-              initialProfilePicture: widget.profilePicture,
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Colors.white,
+      foregroundColor: Colors.black87,
+      titleSpacing: 0,
+      leading: IconButton(
+        icon: Icon(Icons.arrow_back_ios_new, size: 20),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      title: GestureDetector(
+        onTap: () {
+          // Navigate to user details page when tapping on the user info
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => UserDetailsPage(
+                userId: widget.conversationId,
+                initialUsername: widget.conversationName,
+                initialProfilePicture: widget.profilePicture,
+              ),
             ),
-          ),
-        );
-      },
-      child: Row(
-        children: [
-          // Make the avatar clickable as well
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => UserDetailsPage(
-                    userId: widget.conversationId,
-                    initialUsername: widget.conversationName,
-                    initialProfilePicture: widget.profilePicture,
+          );
+        },
+        child: Row(
+          children: [
+            // Make the avatar clickable as well
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => UserDetailsPage(
+                      userId: widget.conversationId,
+                      initialUsername: widget.conversationName,
+                      initialProfilePicture: widget.profilePicture,
+                    ),
+                  ),
+                );
+              },
+              child: CircleAvatar(
+                backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
+                radius: 20,
+                backgroundImage: widget.profilePicture != null &&
+                        widget.profilePicture!.isNotEmpty &&
+                        !widget.profilePicture!.contains('default-avatar')
+                    ? NetworkImage(
+                        'http://192.168.100.5:4400/${widget.profilePicture}')
+                    : null,
+                child: (widget.profilePicture == null ||
+                            widget.profilePicture!.isEmpty ||
+                            widget.profilePicture!
+                                .contains('default-avatar')) &&
+                        widget.conversationName.isNotEmpty
+                    ? Text(
+                        widget.conversationName[0].toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF2A64F6),
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+            SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.conversationName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.black87,
                   ),
                 ),
-              );
-            },
-            child: CircleAvatar(
-              backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
-              radius: 20,
-              backgroundImage: widget.profilePicture != null && 
-                           widget.profilePicture!.isNotEmpty &&
-                           !widget.profilePicture!.contains('default-avatar')
-                  ? NetworkImage('http://192.168.100.5:4400/${widget.profilePicture}')
-                  : null,
-              child: (widget.profilePicture == null || 
-                     widget.profilePicture!.isEmpty ||
-                     widget.profilePicture!.contains('default-avatar')) &&
-                     widget.conversationName.isNotEmpty
-                  ? Text(
-                      widget.conversationName[0].toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFF2A64F6),
-                      ),
-                    )
-                  : null,
+                Text(
+                  _isConnected ? 'Online' : 'Offline',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.normal,
+                    color: _isConnected ? Colors.green : Colors.grey,
+                  ),
+                ),
+              ],
             ),
-          ),
-          SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.conversationName,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Colors.black87,
-                ),
-              ),
-              Text(
-                _isConnected ? 'Online' : 'Offline',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.normal,
-                  color: _isConnected ? Colors.green : Colors.grey,
-                ),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-    actions: [
-      IconButton(
-        icon: Icon(Icons.phone_outlined),
-        onPressed: () {
-          // Call functionality placeholder
-        },
-      ),
-      IconButton(
-        icon: Icon(Icons.more_vert),
-        onPressed: () {
-          // More options menu placeholder
-        },
-      ),
-    ],
-  );
-}
+      actions: [
+        IconButton(
+          icon: Icon(Icons.phone_outlined),
+          onPressed: () => _initiateAudioCall(),
+        ),
+        IconButton(
+          icon: Icon(Icons.videocam_outlined),
+          onPressed: () => _initiateVideoCall(),
+        ),
+      ],
+    );
+  }
 
   Widget _buildTypingIndicatorBar() {
     return Container(

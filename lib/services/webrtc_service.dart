@@ -70,11 +70,16 @@ class WebRTCService {
   String? get callId => _callId;
   
   // Initialize the service
-  Future<void> initialize(User currentUser) async {
+ Future<void> initialize(User currentUser) async {
     _currentUser = currentUser;
     
-    // Set up socket event listeners for WebRTC signaling
+    // Setup socket event listeners
     _setupSocketListeners();
+  }
+
+  // Add a method to manually set the current user
+  void setCurrentUser(User user) {
+    _currentUser = user;
   }
   
   // Set up socket event listeners
@@ -272,64 +277,61 @@ class WebRTCService {
     }
   }
   
-  // Initiate a call to another user
-  Future<bool> initiateCall(String receiverId, CallType callType) async {
-    if (isInCall) {
-      print('WebRTC: Already in a call, cannot initiate another');
-      return false;
-    }
-    
-    if (_currentUser == null) {
-      print('WebRTC: No current user, cannot initiate call');
-      return false;
-    }
-    
-    // Set call data
-    _remoteUserId = receiverId;
-    _callType = callType;
-    _updateCallState(CallState.calling);
-    
-    try {
-      // Create call record on server
-      await _createCallRecord(receiverId, callType);
-      
-      // Get remote user information
-      await _fetchRemoteUserInfo();
-      
-      // Set up media
-      await _setupLocalStream(callType == CallType.video);
-      
-      // Create peer connection
-      _peerConnection = await _createPeerConnection();
-      
-      // Add local tracks to peer connection
-      _localStream!.getTracks().forEach((track) {
-        _peerConnection!.addTrack(track, _localStream!);
-      });
-      
-      // Create offer
-      final offer = await _peerConnection!.createOffer({
-        'offerToReceiveAudio': true,
-        'offerToReceiveVideo': callType == CallType.video,
-      });
-      
-      await _peerConnection!.setLocalDescription(offer);
-      
-      // Send offer to receiver via socket
-      _socketService.sendWebRTCOffer(
-        receiverId,
-        offer.toMap(),
-        callType == CallType.video ? 'video' : 'audio',
-      );
-      
-      print('WebRTC: Call initiated to $receiverId');
-      return true;
-    } catch (e) {
-      print('WebRTC: Error initiating call: $e');
-      _handleCallEnded();
-      return false;
-    }
+ Future<bool> initiateCall(String receiverId, CallType callType) async {
+  if (isInCall) {
+    print('WebRTC: Already in a call, cannot initiate another');
+    return false;
   }
+
+  if (_currentUser == null) {
+    print('WebRTC: No current user, cannot initiate call');
+    return false;
+  }
+
+  // Set call data
+  _remoteUserId = receiverId;
+  _callType = callType;
+  _updateCallState(CallState.calling);
+
+  try {
+    // Set up media
+    await _setupLocalStream(callType == CallType.video);
+
+    // Fetch remote user information
+    await _fetchRemoteUserInfo();
+
+    // Create peer connection
+    _peerConnection = await _createPeerConnection();
+
+    // Add local tracks to peer connection
+    _localStream!.getTracks().forEach((track) {
+      _peerConnection!.addTrack(track, _localStream!);
+    });
+
+    // Create offer
+    final offer = await _peerConnection!.createOffer({
+      'offerToReceiveAudio': true,
+      'offerToReceiveVideo': callType == CallType.video,
+    });
+
+    await _peerConnection!.setLocalDescription(offer);
+
+    // Send offer to receiver via socket
+    // Use SocketService to send the WebRTC offer
+    SocketService().sendWebRTCOffer(
+      receiverId,
+      offer.toMap(),
+      callType == CallType.video ? 'video' : 'audio',
+    );
+
+    print('WebRTC: Call initiated to $receiverId');
+    return true;
+  } catch (e) {
+    print('WebRTC: Error initiating call: $e');
+    _handleCallEnded();
+    return false;
+  }
+}
   
   // Create call record on server
   Future<void> _createCallRecord(String receiverId, CallType callType) async {
