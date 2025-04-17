@@ -30,6 +30,7 @@ class _IncomingCallWidgetState extends State<IncomingCallWidget> with SingleTick
   
   Timer? _autoRejectTimer;
   int _remainingSeconds = 30; // Auto-reject after 30 seconds
+  bool _isAccepting = false;
 
   @override
   void initState() {
@@ -66,31 +67,42 @@ class _IncomingCallWidgetState extends State<IncomingCallWidget> with SingleTick
   
   void _startAutoRejectTimer() {
     _autoRejectTimer = Timer.periodic(Duration(seconds: 1), (timer) {
-      setState(() {
-        _remainingSeconds--;
-      });
-      
-      if (_remainingSeconds <= 0) {
-        _rejectCall();
+      if (mounted) {
+        setState(() {
+          _remainingSeconds--;
+        });
+        
+        if (_remainingSeconds <= 0) {
+          _rejectCall();
+        }
       }
     });
   }
   
   void _acceptCall() {
+    if (_isAccepting) return; // Prevent multiple taps
+    
+    setState(() {
+      _isAccepting = true;
+    });
+    
     _autoRejectTimer?.cancel();
     
-    // Navigate to call screen
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => CallScreen(
-          userId: widget.callerId,
-          userName: widget.callerName,
-          profilePicture: widget.profilePicture,
-          callType: widget.callType,
-          isOutgoing: false,
+    // Run animation to hide the widget
+    _animationController.reverse().then((_) {
+      // Navigate to call screen after the animation completes
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => CallScreen(
+            userId: widget.callerId,
+            userName: widget.callerName,
+            profilePicture: widget.profilePicture,
+            callType: widget.callType,
+            isOutgoing: false,
+          ),
         ),
-      ),
-    );
+      );
+    });
   }
   
   void _rejectCall() {
@@ -232,11 +244,20 @@ class _IncomingCallWidgetState extends State<IncomingCallWidget> with SingleTick
                     
                     // Accept button
                     ElevatedButton.icon(
-                      onPressed: _acceptCall,
-                      icon: Icon(
-                        isVideoCall ? Icons.videocam : Icons.call,
-                        color: Colors.white,
-                      ),
+                      onPressed: _isAccepting ? null : _acceptCall,
+                      icon: _isAccepting 
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Icon(
+                              isVideoCall ? Icons.videocam : Icons.call,
+                              color: Colors.white,
+                            ),
                       label: Text('Answer', style: TextStyle(color: Colors.white)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
@@ -245,6 +266,7 @@ class _IncomingCallWidgetState extends State<IncomingCallWidget> with SingleTick
                           borderRadius: BorderRadius.circular(20),
                         ),
                         padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        disabledBackgroundColor: Colors.green.withOpacity(0.6),
                       ),
                     ),
                   ],

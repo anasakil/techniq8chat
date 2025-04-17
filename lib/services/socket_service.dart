@@ -27,7 +27,7 @@ class SocketService {
   final _onUserStatus = StreamController<Map<String, String>>.broadcast();
   final _onTyping = StreamController<String>.broadcast();
   
-  // WebRTC Stream controllers - NEW
+  // WebRTC Stream controllers
   final _onWebRTCOffer = StreamController<Map<String, dynamic>>.broadcast();
   final _onWebRTCAnswer = StreamController<Map<String, dynamic>>.broadcast();
   final _onWebRTCIceCandidate = StreamController<Map<String, dynamic>>.broadcast();
@@ -41,7 +41,7 @@ class SocketService {
   Stream<Map<String, String>> get onUserStatus => _onUserStatus.stream;
   Stream<String> get onTyping => _onTyping.stream;
   
-  // WebRTC Streams - NEW
+  // WebRTC Streams
   Stream<Map<String, dynamic>> get onWebRTCOffer => _onWebRTCOffer.stream;
   Stream<Map<String, dynamic>> get onWebRTCAnswer => _onWebRTCAnswer.stream;
   Stream<Map<String, dynamic>> get onWebRTCIceCandidate => _onWebRTCIceCandidate.stream;
@@ -79,7 +79,7 @@ class SocketService {
       'reconnection': true,
       'reconnectionDelay': 1000,
       'reconnectionDelayMax': 5000,
-      'reconnectionAttempts': 5
+      'reconnectionAttempts': 10
     });
 
     _setupSocketListeners();
@@ -94,7 +94,6 @@ class SocketService {
       }
     });
   }
-
 
   // Set up socket event listeners
   void _setupSocketListeners() {
@@ -117,12 +116,18 @@ class SocketService {
       print('Socket disconnected');
       isConnected = false;
       _onConnected.add(false);
+      
+      // Start reconnection timer
+      _startConnectionCheck();
     });
 
     _socket?.onConnectError((error) {
       print('Connection error: $error');
       isConnected = false;
       _onConnected.add(false);
+      
+      // Start reconnection timer
+      _startConnectionCheck();
     });
 
     // Listen for new messages
@@ -169,7 +174,7 @@ class SocketService {
       }
     });
 
-    // Listen for message delivery status
+    // Listen for message status updates
     _socket?.on('message_delivered', (data) async {
       print('Message delivered: $data');
       final messageId = data['messageId'];
@@ -185,24 +190,6 @@ class SocketService {
         });
       } catch (e) {
         print('Error processing message_delivered: $e');
-      }
-    });
-
-    _socket?.on('message_pending', (data) async {
-      print('Message pending: $data');
-      final messageId = data['messageId'];
-
-      try {
-        // Update message status in Hive storage
-        await hiveStorage.updateMessageStatus(messageId, 'pending');
-
-        // Broadcast status update
-        _onMessageStatus.add({
-          'messageId': messageId,
-          'status': 'pending',
-        });
-      } catch (e) {
-        print('Error processing message_pending: $e');
       }
     });
 
@@ -289,7 +276,7 @@ class SocketService {
       }
     });
 
-    // WebRTC related events - NEW
+    // WebRTC related events
     _socket?.on('webrtc_offer', (data) {
       print('WebRTC offer received: $data');
       _onWebRTCOffer.add(data);
@@ -317,7 +304,7 @@ class SocketService {
       _onWebRTCCallRejected.add(receiverId);
     });
     
-    // Incoming call event - NEW
+    // Incoming call event
     _socket?.on('incoming_call', (data) {
       print('Incoming call received: $data');
       // This will be handled by UI layer
@@ -411,19 +398,20 @@ class SocketService {
     }
   }
 
-  // WebRTC signaling methods - NEW
+  // WebRTC signaling methods
   void sendWebRTCOffer(String receiverId, dynamic offer, String callType) {
-  if (!isConnected) {
-    print('Cannot send WebRTC offer: socket disconnected');
-    return;
+    if (!isConnected) {
+      print('Cannot send WebRTC offer: socket disconnected');
+      return;
+    }
+    
+    _socket?.emit('webrtc_offer', {
+      'receiverId': receiverId,
+      'offer': offer,
+      'callType': callType
+    });
   }
   
-  _socket?.emit('webrtc_offer', {
-    'receiverId': receiverId,
-    'offer': offer,
-    'callType': callType
-  });
-}
   void sendWebRTCAnswer(String receiverId, dynamic answer) {
     if (!isConnected) {
       print('Cannot send WebRTC answer: socket disconnected');

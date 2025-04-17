@@ -6,8 +6,6 @@ import 'package:techniq8chat/services/webrtc_service.dart';
 import 'package:techniq8chat/services/auth_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-
-
 class CallScreen extends StatefulWidget {
   final String userId;
   final String userName;
@@ -47,10 +45,13 @@ class _CallScreenState extends State<CallScreen> {
   Timer? _callTimer;
   String _callDuration = '00:00';
   
+  // Stream subscriptions
+  List<StreamSubscription> _subscriptions = [];
+  
   @override
   void initState() {
     super.initState();
-     final authService = Provider.of<AuthService>(context, listen: false);
+    final authService = Provider.of<AuthService>(context, listen: false);
     final currentUser = authService.currentUser;
     
     if (currentUser == null) {
@@ -65,7 +66,11 @@ class _CallScreenState extends State<CallScreen> {
     _initRenderers();
     
     // Enable wakelock to keep screen on during call
-    // Wakelock.enable();
+    try {
+      WakelockPlus.enable();
+    } catch (e) {
+      print('Error enabling wakelock: $e');
+    }
     
     // Set up listeners
     _setupListeners();
@@ -83,7 +88,9 @@ class _CallScreenState extends State<CallScreen> {
   
   void _setupListeners() {
     // Call state listener
-    _webRTCService.onCallStateChanged.listen((state) {
+    _subscriptions.add(_webRTCService.onCallStateChanged.listen((state) {
+      if (!mounted) return; // Check if widget is still mounted
+      
       setState(() {
         switch (state) {
           case CallState.idle:
@@ -126,30 +133,36 @@ class _CallScreenState extends State<CallScreen> {
             break;
         }
       });
-    });
+    }));
     
     // Local stream listener
-    _webRTCService.onLocalStream.listen((stream) {
+    _subscriptions.add(_webRTCService.onLocalStream.listen((stream) {
+      if (!mounted) return; // Check if widget is still mounted
+      
       if (stream != null) {
         setState(() {
           _localRenderer.srcObject = stream;
         });
       }
-    });
+    }));
     
     // Remote stream listener
-    _webRTCService.onRemoteStream.listen((stream) {
+    _subscriptions.add(_webRTCService.onRemoteStream.listen((stream) {
+      if (!mounted) return; // Check if widget is still mounted
+      
       if (stream != null) {
         setState(() {
           _remoteRenderer.srcObject = stream;
         });
       }
-    });
+    }));
   }
   
   Future<void> _startOutgoingCall() async {
     // Wait for the widget to be properly initialized
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return; // Check if widget is still mounted
+      
       final success = await _webRTCService.initiateCall(
         widget.userId,
         widget.callType,
@@ -194,12 +207,13 @@ class _CallScreenState extends State<CallScreen> {
   void _navigateBack() {
     if (mounted) {
       Future.delayed(Duration(milliseconds: 500), () {
-        Navigator.of(context).pop();
+        if (mounted) Navigator.of(context).pop();
       });
     }
   }
   
   void _toggleMicrophone() {
+    if (!mounted) return;
     setState(() {
       _micEnabled = !_micEnabled;
       _webRTCService.toggleMicrophone(!_micEnabled);
@@ -207,6 +221,7 @@ class _CallScreenState extends State<CallScreen> {
   }
   
   void _toggleCamera() {
+    if (!mounted) return;
     setState(() {
       _cameraEnabled = !_cameraEnabled;
       _webRTCService.toggleVideo(_cameraEnabled);
@@ -218,6 +233,7 @@ class _CallScreenState extends State<CallScreen> {
   }
   
   void _toggleSpeaker() {
+    if (!mounted) return;
     setState(() {
       _speakerEnabled = !_speakerEnabled;
       // Implement speaker toggle logic here
@@ -241,12 +257,23 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void dispose() {
     _stopCallTimer();
-    // Wakelock.disable();
+    
+    // Disable wakelock
+    try {
+      WakelockPlus.disable();
+    } catch (e) {
+      print('Error disabling wakelock: $e');
+    }
+    
+    // Cancel subscriptions
+    for (var subscription in _subscriptions) {
+      subscription.cancel();
+    }
+    _subscriptions.clear();
+    
+    // Dispose renderers
     _localRenderer.dispose();
     _remoteRenderer.dispose();
-    
-    // Note: We don't dispose WebRTCService here because it's a singleton
-    // The service handles its internal cleanup on call end
     
     super.dispose();
   }
