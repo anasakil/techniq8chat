@@ -3,13 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:techniq8chat/screens/welcome_screen.dart';
 import 'package:techniq8chat/screens/bottom_navigation_screen.dart';
-import 'package:techniq8chat/widgets/call_wrapper.dart';
 import 'services/auth_service.dart';
 import 'services/hive_storage.dart';
-import 'services/webrtc_service.dart';
 import 'screens/splash_screen.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -18,16 +14,7 @@ void main() async {
   // Initialize Hive
   await HiveStorage.initialize();
   
-  // Request permissions required for WebRTC
-  await _requestPermissions();
-  
   runApp(MyApp());
-}
-
-// Request necessary permissions for WebRTC
-Future<void> _requestPermissions() async {
-  await Permission.camera.request();
-  await Permission.microphone.request();
 }
 
 class MyApp extends StatelessWidget {
@@ -37,7 +24,6 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
         Provider<HiveStorage>(create: (_) => HiveStorage()),
-        Provider<WebRTCService>(create: (_) => WebRTCService()),
       ],
       child: MaterialApp(
         title: 'Techniq8Chat',
@@ -52,9 +38,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
         debugShowCheckedModeBanner: false,
-        home: CallWrapper(
-          child: SplashScreen(),
-        ),
+        home: SplashScreen(),
       ),
     );
   }
