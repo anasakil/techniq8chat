@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:techniq8chat/screens/welcome_screen.dart';
 import 'package:techniq8chat/screens/bottom_navigation_screen.dart';
+import 'package:techniq8chat/screens/test_call_page.dart'; // Add import for test call page
 import 'services/auth_service.dart';
 import 'services/hive_storage.dart';
 import 'screens/splash_screen.dart';
@@ -39,6 +40,9 @@ class MyApp extends StatelessWidget {
         ),
         debugShowCheckedModeBanner: false,
         home: SplashScreen(),
+        routes: {
+          '/test_call': (context) => TestCallPage(), // Add route for test call page
+        },
       ),
     );
   }

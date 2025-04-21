@@ -84,7 +84,7 @@ class ConversationItem extends StatelessWidget {
         conversation.profilePicture!.isNotEmpty &&
         !conversation.profilePicture!.contains('default-avatar')) {
       return CircleAvatar(
-        backgroundImage: NetworkImage('http://192.168.100.96:4400/${conversation.profilePicture}'),
+        backgroundImage: NetworkImage('http://51.178.138.50:4400/${conversation.profilePicture}'),
       );
     } else {
       return CircleAvatar(

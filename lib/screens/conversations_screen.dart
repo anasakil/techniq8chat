@@ -532,39 +532,23 @@ class _ConversationsScreenState extends State<ConversationsScreen>
                   
                   SizedBox(height: 4),
                   
-                  // Message preview and unread indicator
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          conversation.lastMessage ?? 'No messages yet',
-                          style: TextStyle(
-                            color: conversation.unreadCount > 0
-                                ? Colors.black87
-                                : Colors.grey[600],
-                            fontWeight: conversation.unreadCount > 0
-                                ? FontWeight.w500
-                                : FontWeight.normal,
-                            fontSize: 14,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                      
-                      // Unread indicator
-                      if (conversation.unreadCount > 0)
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2A64F6),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                    ],
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  conversation.lastMessage ?? 'No messages yet',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    
+                        color: Colors.black87,
+                        fontWeight: FontWeight.bold,
                   ),
+                ),
+              ),
+             
+            ],
+          ),
                 ],
               ),
             ),
@@ -594,7 +578,7 @@ class _ConversationsScreenState extends State<ConversationsScreen>
             backgroundImage: conversation.profilePicture != null &&
                     conversation.profilePicture!.isNotEmpty &&
                     !conversation.profilePicture!.contains('default-avatar')
-                ? NetworkImage('http://192.168.100.96:4400/${conversation.profilePicture}')
+                ? NetworkImage('http://51.178.138.50:4400/${conversation.profilePicture}')
                 : null,
             child: (conversation.profilePicture == null ||
                     conversation.profilePicture!.isEmpty ||

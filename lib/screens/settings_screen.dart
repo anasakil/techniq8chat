@@ -148,21 +148,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SizedBox(height: 20),
             
             // Privacy and security
-            _buildSectionHeader('Privacy and Security'),
-            _buildSettingItem(
-              icon: Icons.lock_outline,
-              title: 'Privacy Settings',
-              onTap: () {
-                // Privacy settings screen navigation
-              },
-            ),
-            _buildSettingItem(
-              icon: Icons.security_outlined,
-              title: 'Security',
-              onTap: () {
-                // Security settings screen navigation
-              },
-            ),
+            // _buildSectionHeader('Privacy and Security'),
+            // _buildSettingItem(
+            //   icon: Icons.lock_outline,
+            //   title: 'Privacy Settings',
+            //   onTap: () {
+            //     // Privacy settings screen navigation
+            //   },
+            // ),
+            // _buildSettingItem(
+            //   icon: Icons.security_outlined,
+            //   title: 'Security',
+            //   onTap: () {
+            //     // Security settings screen navigation
+            //   },
+            // ),
             // _buildSettingItem(
             //   icon: Icons.block_outlined,
             //   title: 'Blocked Users',
@@ -190,6 +190,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // About screen navigation
               },
             ),
+             // Test Features
+            // _buildSectionHeader('Developer Tools'),
+            // _buildSettingItem(
+            //   icon: Icons.call,
+            //   title: 'WebRTC Call Test',
+            //   subtitle: 'Test call functionality',
+            //   onTap: () {
+            //     Navigator.pushNamed(context, '/test_call');
+            //   },
+            // ),
             
             SizedBox(height: 20),
             
@@ -248,7 +258,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               backgroundImage: _profilePicture != null && 
                        _profilePicture!.isNotEmpty &&
                        !_profilePicture!.contains('default-avatar')
-                ? NetworkImage('http://192.168.100.96:4400/${_profilePicture}')
+                ? NetworkImage('http://51.178.138.50:4400/${_profilePicture}')
                 : null,
               child: (_profilePicture == null || 
                       _profilePicture!.isEmpty ||

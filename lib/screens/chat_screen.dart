@@ -803,10 +803,10 @@ PreferredSizeWidget _buildAppBar() {
                       ),
 
                       // Message status indicator (only for sent messages)
-                      if (isSent) ...[
-                        SizedBox(width: 4),
-                        _buildStatusIndicator(message.status),
-                      ],
+                      // if (isSent) ...[
+                      //   SizedBox(width: 4),
+                      //   _buildStatusIndicator(message.status),
+                      // ],
                     ],
                   ),
                 ],
@@ -818,34 +818,34 @@ PreferredSizeWidget _buildAppBar() {
     );
   }
 
-  Widget _buildStatusIndicator(String? status) {
-    IconData iconData;
-    Color iconColor;
+  // Widget _buildStatusIndicator(String? status) {
+  //   IconData iconData;
+  //   Color iconColor;
 
-    switch (status) {
-      case 'sent':
-        iconData = Icons.check;
-        iconColor = Colors.white.withOpacity(0.7);
-        break;
-      case 'delivered':
-        iconData = Icons.done_all;
-        iconColor = Colors.white.withOpacity(0.7);
-        break;
-      case 'read':
-        iconData = Icons.done_all;
-        iconColor = Colors.lightBlueAccent;
-        break;
-      default:
-        iconData = Icons.access_time;
-        iconColor = Colors.white.withOpacity(0.7);
-    }
+  //   switch (status) {
+  //     case 'sent':
+  //       iconData = Icons.check;
+  //       iconColor = Colors.white.withOpacity(0.7);
+  //       break;
+  //     case 'delivered':
+  //       iconData = Icons.done_all;
+  //       iconColor = Colors.white.withOpacity(0.7);
+  //       break;
+  //     case 'read':
+  //       iconData = Icons.done_all;
+  //       iconColor = Colors.lightBlueAccent;
+  //       break;
+  //     default:
+  //       iconData = Icons.access_time;
+  //       iconColor = Colors.white.withOpacity(0.7);
+  //   }
 
-    return Icon(
-      iconData,
-      size: 14,
-      color: iconColor,
-    );
-  }
+  //   return Icon(
+  //     iconData,
+  //     size: 14,
+  //     color: iconColor,
+  //   );
+  // }
 
   Widget _buildMessageInput() {
     return Container(

@@ -4,18 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:techniq8chat/models/user_model.dart';
 import 'package:techniq8chat/services/socket_service.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 enum CallState {
   idle,
-  calling,
-  ringing,
+  outgoing,
+  incoming,
+  connecting,
   connected,
-  ended,
-  busy,
-  rejected,
-  notAnswered
+  error,
+  ended
 }
 
 enum CallType {
@@ -29,212 +26,117 @@ class WebRTCService {
   factory WebRTCService() => _instance;
   WebRTCService._internal();
 
-  // Socket service
-  final SocketService _socketService = SocketService();
-
-  // WebRTC related objects
+  // WebRTC components
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStream? _remoteStream;
-  
-  // Call related data
+  RTCVideoRenderer? localRenderer;
+  RTCVideoRenderer? remoteRenderer;
+
+  // Call state tracking
   CallState _callState = CallState.idle;
   CallType _callType = CallType.audio;
+  User? _remoteUser;
   User? _currentUser;
-  String? _remoteUserId;
-  String? _remoteName;
-  DateTime? _callStartTime;
   String? _callId;
-  
-  // Stream controllers for event handling
+  DateTime? _callStartTime;
+
+  // Stream controllers for state changes
   final _callStateController = StreamController<CallState>.broadcast();
-  final _localStreamController = StreamController<MediaStream?>.broadcast();
   final _remoteStreamController = StreamController<MediaStream?>.broadcast();
-  final _remoteUserInfoController = StreamController<Map<String, String>>.broadcast();
-  
-  // Public streams
+  final _localStreamController = StreamController<MediaStream?>.broadcast();
+  final _callTimeController = StreamController<Duration>.broadcast();
+
+  // Streams
   Stream<CallState> get onCallStateChanged => _callStateController.stream;
-  Stream<MediaStream?> get onLocalStream => _localStreamController.stream;
-  Stream<MediaStream?> get onRemoteStream => _remoteStreamController.stream;
-  Stream<Map<String, String>> get onRemoteUserInfo => _remoteUserInfoController.stream;
-  
+  Stream<MediaStream?> get onRemoteStreamChanged => _remoteStreamController.stream;
+  Stream<MediaStream?> get onLocalStreamChanged => _localStreamController.stream;
+  Stream<Duration> get onCallTimeChanged => _callTimeController.stream;
+
   // Getters
   CallState get callState => _callState;
   CallType get callType => _callType;
+  User? get remoteUser => _remoteUser;
   bool get isInCall => _callState != CallState.idle && _callState != CallState.ended;
-  String? get remoteUserId => _remoteUserId;
-  String? get remoteName => _remoteName;
-  DateTime? get callStartTime => _callStartTime;
-  Duration get callDuration => 
-      _callStartTime != null ? DateTime.now().difference(_callStartTime!) : Duration.zero;
   String? get callId => _callId;
-  
+
+  // Timer for tracking call duration
+  Timer? _callTimer;
+
+  // Debug logger function
+  Function(String)? logger;
+
   // Initialize the service
   Future<void> initialize(User currentUser) async {
     _currentUser = currentUser;
+    _log('WebRTC service initialized for user: ${currentUser.username}');
     
-    // Setup socket event listeners
+    // Initialize renderers
+    localRenderer = RTCVideoRenderer();
+    remoteRenderer = RTCVideoRenderer();
+    await localRenderer!.initialize();
+    await remoteRenderer!.initialize();
+    
+    // Connect socket listeners for WebRTC signaling
     _setupSocketListeners();
   }
 
-  // Add a method to manually set the current user
-  void setCurrentUser(User user) {
-    _currentUser = user;
-    _setupSocketListeners(); // Make sure we set up listeners when we set the user
-  }
-  
   // Set up socket event listeners
   void _setupSocketListeners() {
-    // WebRTC offer from another user
-    _socketService.onWebRTCOffer.listen((data) async {
-      print('WebRTC: Received offer from ${data['senderId']}');
+    final socket = SocketService();
+    
+    // WebRTC offer
+    socket.onWebRTCOffer.listen((data) {
+      _log('Received WebRTC offer from ${data['senderId']}');
       
       if (isInCall) {
+        _log('Already in a call, rejecting');
         // Auto-reject if already in a call
-        _rejectIncomingCall(data['senderId']);
+        socket.sendWebRTCRejectCall(data['senderId']);
         return;
       }
       
-      // Store the remote user ID
-      _remoteUserId = data['senderId'];
-      _callType = data['callType'] == 'video' ? CallType.video : CallType.audio;
-      
-      // Get remote user info
-      await _fetchRemoteUserInfo();
-      
-      // Update call state to ringing
-      _updateCallState(CallState.ringing);
-      
-      // Store the offer for later use when the call is accepted
-      _pendingOffer = data['offer'];
+      // Handle incoming call
+      _handleIncomingCall(data);
     });
     
-    // WebRTC answer from callee
-    _socketService.onWebRTCAnswer.listen((data) async {
-      print('WebRTC: Received answer');
-      
-      if (_peerConnection == null) {
-        print('WebRTC: No peer connection, ignoring answer');
-        return;
-      }
-      
-      try {
-        // Extract the SDP and type from the answer
-        final sdp = data['answer']['sdp'];
-        final type = data['answer']['type'];
-        
-        // Create RTCSessionDescription object
-        RTCSessionDescription description = RTCSessionDescription(sdp, type);
-        
-        await _peerConnection!.setRemoteDescription(description);
-        print('WebRTC: Set remote description from answer');
-        
-        // Update call state to connected after setting remote description
-        _updateCallState(CallState.connected);
-      } catch (e) {
-        print('WebRTC: Error setting remote description: $e');
-        _handleCallEnded();
-      }
+    // WebRTC answer
+    socket.onWebRTCAnswer.listen((data) {
+      _log('Received WebRTC answer');
+      _handleRemoteAnswer(data);
     });
     
-    // ICE candidate from peer
-    _socketService.onWebRTCIceCandidate.listen((data) async {
-      if (_peerConnection == null) {
-        print('WebRTC: No peer connection, ignoring ICE candidate');
-        return;
-      }
-      
-      try {
-        final candidateMap = data['candidate'];
-        print('WebRTC: Received ICE candidate: $candidateMap');
-        
-        // Make sure we have all required fields
-        if (candidateMap['candidate'] != null &&
-            candidateMap['sdpMid'] != null &&
-            candidateMap['sdpMLineIndex'] != null) {
-          
-          RTCIceCandidate candidate = RTCIceCandidate(
-            candidateMap['candidate'],
-            candidateMap['sdpMid'],
-            candidateMap['sdpMLineIndex'],
-          );
-          
-          await _peerConnection!.addCandidate(candidate);
-          print('WebRTC: Added ICE candidate');
-        } else {
-          print('WebRTC: Invalid ICE candidate format');
-        }
-      } catch (e) {
-        print('WebRTC: Error adding ICE candidate: $e');
-      }
+    // ICE candidates
+    socket.onWebRTCIceCandidate.listen((data) {
+      _log('Received ICE candidate');
+      _handleRemoteIceCandidate(data);
     });
     
-    // End call signal
-    _socketService.onWebRTCEndCall.listen((senderId) {
-      print('WebRTC: Remote peer ended the call');
-      _handleCallEnded();
+    // Call end
+    socket.onWebRTCEndCall.listen((senderId) {
+      _log('Remote peer ended the call');
+      _endCall(false); // don't notify remote as they initiated the end
     });
     
-    // Call rejection
-    _socketService.onWebRTCCallRejected.listen((receiverId) {
-      print('WebRTC: Call rejected by receiver');
-      _updateCallState(CallState.rejected);
-      
-      // Clean up resources after a delay to allow UI to react
-      Future.delayed(Duration(seconds: 2), () {
-        _handleCallEnded();
-      });
+    // Call rejected
+    socket.onWebRTCCallRejected.listen((receiverId) {
+      _log('Call rejected by receiver');
+      _updateCallState(CallState.ended);
+      _cleanupCall();
     });
   }
-  
-  // Temp variable to store an offer while waiting for user to accept/reject
-  dynamic _pendingOffer;
-  
-  // Fetch remote user information
-  Future<void> _fetchRemoteUserInfo() async {
-    if (_remoteUserId == null || _currentUser == null) return;
-    
-    try {
-      final response = await http.get(
-        Uri.parse('http://192.168.100.96:4400/api/users/$_remoteUserId'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${_currentUser!.token}',
-        },
-      );
-      
-      if (response.statusCode == 200) {
-        final userData = json.decode(response.body);
-        _remoteName = userData['username'] ?? 'Unknown User';
-        
-        // Notify listeners about remote user info
-        _remoteUserInfoController.add({
-          'userId': _remoteUserId!,
-          'name': _remoteName!,
-          'profilePicture': userData['profilePicture'] ?? '',
-        });
-      }
-    } catch (e) {
-      print('WebRTC: Error fetching remote user info: $e');
-      _remoteName = 'Unknown User';
+
+  // Log messages
+  void _log(String message) {
+    print('[WebRTC] $message');
+    if (logger != null) {
+      logger!(message);
     }
   }
-  
-  // Update call state and notify listeners
-  void _updateCallState(CallState newState) {
-    print('WebRTC: Call state changed from $_callState to $newState');
-    _callState = newState;
-    _callStateController.add(newState);
-    
-    // Update call start time if connected
-    if (newState == CallState.connected && _callStartTime == null) {
-      _callStartTime = DateTime.now();
-    }
-  }
-  
-  // Create WebRTC peer connection with configuration
+
+  // Create PeerConnection with config
   Future<RTCPeerConnection> _createPeerConnection() async {
-    final configuration = {
+    final config = {
       'iceServers': [
         {'urls': 'stun:stun.l.google.com:19302'},
         {'urls': 'stun:stun1.l.google.com:19302'},
@@ -242,154 +144,168 @@ class WebRTCService {
       'sdpSemantics': 'unified-plan'
     };
     
-    final pc = await createPeerConnection(configuration);
+    final pc = await createPeerConnection(config);
     
-    // Handle ICE candidates
+    // Set up event handlers
     pc.onIceCandidate = (RTCIceCandidate candidate) {
-      print('WebRTC: Generated ICE candidate');
-      if (_remoteUserId != null) {
-        _socketService.sendWebRTCIceCandidate(_remoteUserId!, candidate.toMap());
-      }
+      _log('Generated ICE candidate');
+      _sendIceCandidate(candidate);
     };
     
-    // Handle connection state changes
     pc.onConnectionState = (RTCPeerConnectionState state) {
-      print('WebRTC: Connection state: $state');
+      _log('Connection state changed: $state');
       
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
         _updateCallState(CallState.connected);
-      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed || 
+        _startCallTimer();
+      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
                 state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
                 state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
-        _handleCallEnded();
+        _endCall(false);
       }
     };
     
-    // Handle ICE connection state changes
-    pc.onIceConnectionState = (RTCIceConnectionState state) {
-      print('WebRTC: ICE connection state: $state');
-    };
-    
-    // Handle remote stream
     pc.onAddStream = (MediaStream stream) {
-      print('WebRTC: Remote stream added');
+      _log('Remote stream added');
       _remoteStream = stream;
+      remoteRenderer?.srcObject = stream;
       _remoteStreamController.add(stream);
     };
     
     return pc;
   }
-  
-  // Set up local media stream (audio/video)
-  Future<MediaStream> _setupLocalStream(bool videoEnabled) async {
-    final mediaConstraints = {
+
+  // Set up local media stream
+  Future<MediaStream> _getUserMedia(bool videoEnabled) async {
+    final Map<String, dynamic> constraints = {
       'audio': true,
-      'video': videoEnabled ? {
-        'mandatory': {
-          'minWidth': '640',
-          'minHeight': '480',
-          'minFrameRate': '30',
-        },
-        'facingMode': 'user',
-        'optional': [],
-      } : false,
+      'video': videoEnabled
     };
     
     try {
-      final stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      _log('Getting user media: audio=${constraints['audio']}, video=${constraints['video']}');
+      final stream = await navigator.mediaDevices.getUserMedia(constraints);
       _localStream = stream;
+      localRenderer?.srcObject = stream;
       _localStreamController.add(stream);
       return stream;
     } catch (e) {
-      print('WebRTC: Error getting user media: $e');
-      throw Exception('Could not access camera or microphone. Please check your device settings.');
+      _log('Error getting user media: $e');
+      throw Exception('Could not access camera or microphone: $e');
     }
   }
-  
-  Future<bool> initiateCall(String receiverId, CallType callType) async {
+
+  // Initiate call to a user
+  Future<bool> initiateCall(User user, CallType callType) async {
     if (isInCall) {
-      print('WebRTC: Already in a call, cannot initiate another');
+      _log('Already in a call, cannot start another');
       return false;
     }
-
+    
     if (_currentUser == null) {
-      print('WebRTC: No current user, cannot initiate call');
+      _log('Current user not set');
       return false;
     }
-
-    // Set call data
-    _remoteUserId = receiverId;
+    
+    _remoteUser = user;
     _callType = callType;
-    _updateCallState(CallState.calling);
-
+    _updateCallState(CallState.outgoing);
+    
     try {
       // Set up media
-      await _setupLocalStream(callType == CallType.video);
-
-      // Fetch remote user information
-      await _fetchRemoteUserInfo();
-
+      _log('Setting up ${callType == CallType.video ? 'video' : 'audio'} call');
+      await _getUserMedia(callType == CallType.video);
+      
       // Create peer connection
       _peerConnection = await _createPeerConnection();
-
+      
       // Add local tracks to peer connection
       _localStream!.getTracks().forEach((track) {
         _peerConnection!.addTrack(track, _localStream!);
       });
-
-      // Create offer with appropriate constraints
-      RTCSessionDescription offer = await _peerConnection!.createOffer({
+      
+      // Create offer
+      final RTCSessionDescription offer = await _peerConnection!.createOffer({
         'offerToReceiveAudio': true,
         'offerToReceiveVideo': callType == CallType.video,
       });
-
+      
       // Set local description
       await _peerConnection!.setLocalDescription(offer);
-      print('WebRTC: Created and set local offer: ${offer.toMap()}');
-
+      _log('Created and set local offer');
+      
       // Send offer to receiver via socket
-      _socketService.sendWebRTCOffer(
-        receiverId,
+      final socket = SocketService();
+      socket.sendWebRTCOffer(
+        user.id,
         offer.toMap(),
         callType == CallType.video ? 'video' : 'audio',
       );
-
-      print('WebRTC: Call initiated to $receiverId');
+      
+      _log('Sent offer to ${user.username}');
       return true;
     } catch (e) {
-      print('WebRTC: Error initiating call: $e');
-      _handleCallEnded();
+      _log('Error initiating call: $e');
+      _updateCallState(CallState.error);
+      _cleanupCall();
       return false;
     }
   }
-  
+
+  // Handle incoming call from socket
+  Future<void> _handleIncomingCall(Map<String, dynamic> data) async {
+    try {
+      _callType = data['callType'] == 'video' ? CallType.video : CallType.audio;
+      _updateCallState(CallState.incoming);
+      
+      // TODO: Fetch caller user details and set _remoteUser
+      // This would typically involve a call to your user service
+      
+      // Store the offer for later use when call is accepted
+      _pendingOffer = data['offer'];
+      _pendingCallerId = data['senderId'];
+      
+      // Notification handling would go here
+      
+    } catch (e) {
+      _log('Error handling incoming call: $e');
+    }
+  }
+
+  // Temporary storage for pending call data
+  dynamic _pendingOffer;
+  String? _pendingCallerId;
+
   // Accept an incoming call
-  Future<bool> acceptIncomingCall() async {
-    if (_callState != CallState.ringing || _pendingOffer == null) {
-      print('WebRTC: No pending call to accept');
+  Future<bool> acceptIncomingCall(User caller) async {
+    if (_callState != CallState.incoming || _pendingOffer == null) {
+      _log('No incoming call to accept');
       return false;
     }
     
+    _remoteUser = caller;
+    
     try {
       // Set up media
-      await _setupLocalStream(_callType == CallType.video);
+      await _getUserMedia(_callType == CallType.video);
       
       // Create peer connection
       _peerConnection = await _createPeerConnection();
       
-      // Add tracks to peer connection
+      // Add local tracks to peer connection
       _localStream!.getTracks().forEach((track) {
         _peerConnection!.addTrack(track, _localStream!);
       });
       
       // Set remote description (the offer)
-      final remoteDesc = RTCSessionDescription(
-        _pendingOffer['sdp'],
-        _pendingOffer['type'],
+      await _peerConnection!.setRemoteDescription(
+        RTCSessionDescription(
+          _pendingOffer['sdp'],
+          _pendingOffer['type'],
+        ),
       );
       
-      await _peerConnection!.setRemoteDescription(remoteDesc);
-      print('WebRTC: Set remote description from offer');
+      _log('Set remote description from offer');
       
       // Create answer
       final answer = await _peerConnection!.createAnswer({
@@ -398,110 +314,177 @@ class WebRTCService {
       });
       
       await _peerConnection!.setLocalDescription(answer);
-      print('WebRTC: Created and set local answer');
+      _log('Created and set local answer');
       
-      // Send answer to caller
-      if (_remoteUserId != null) {
-        _socketService.sendWebRTCAnswer(_remoteUserId!, answer.toMap());
-        print('WebRTC: Sent answer to caller');
-      }
+      // Send answer
+      final socket = SocketService();
+      socket.sendWebRTCAnswer(_pendingCallerId!, answer.toMap());
+      _log('Sent answer to caller');
       
-      // Update call status
-      _updateCallState(CallState.connected);
+      _updateCallState(CallState.connecting);
       
       // Clear pending offer
       _pendingOffer = null;
+      _pendingCallerId = null;
       
       return true;
     } catch (e) {
-      print('WebRTC: Error accepting call: $e');
-      _handleCallEnded();
+      _log('Error accepting call: $e');
+      _updateCallState(CallState.error);
+      _cleanupCall();
       return false;
     }
   }
-  
-  // Reject an incoming call
+
+  // Reject incoming call
   void rejectIncomingCall() {
-    if (_callState != CallState.ringing || _remoteUserId == null) {
+    if (_callState != CallState.incoming || _pendingCallerId == null) {
       return;
     }
     
-    _rejectIncomingCall(_remoteUserId!);
-    _updateCallState(CallState.rejected);
+    final socket = SocketService();
+    socket.sendWebRTCRejectCall(_pendingCallerId!);
+    _log('Call rejected');
     
-    // Clean up resources after a delay to allow UI to react
-    Future.delayed(Duration(seconds: 2), () {
-      _handleCallEnded();
-    });
+    _pendingOffer = null;
+    _pendingCallerId = null;
+    _updateCallState(CallState.idle);
   }
-  
-  // Helper method to reject incoming call via socket
-  void _rejectIncomingCall(String callerId) {
-    _socketService.sendWebRTCRejectCall(callerId);
-    print('WebRTC: Call rejected');
+
+  // Update call state and notify listeners
+  void _updateCallState(CallState newState) {
+    _log('Call state changed from $_callState to $newState');
+    _callState = newState;
+    _callStateController.add(newState);
+    
+    // If connected, start tracking call time
+    if (newState == CallState.connected && _callStartTime == null) {
+      _callStartTime = DateTime.now();
+    }
   }
-  
-  // End an ongoing call
-  void endCall() {
-    if (!isInCall) {
-      return;
+
+  // Send ICE candidate to peer
+  void _sendIceCandidate(RTCIceCandidate candidate) {
+    if (_remoteUser == null) return;
+    
+    final socket = SocketService();
+    socket.sendWebRTCIceCandidate(
+      _remoteUser!.id,
+      candidate.toMap(),
+    );
+  }
+
+  // Handle remote ICE candidate
+  Future<void> _handleRemoteIceCandidate(Map<String, dynamic> data) async {
+    if (_peerConnection == null) return;
+    
+    try {
+      final candidateMap = data['candidate'];
+      final candidate = RTCIceCandidate(
+        candidateMap['candidate'],
+        candidateMap['sdpMid'],
+        candidateMap['sdpMLineIndex'],
+      );
+      
+      await _peerConnection!.addCandidate(candidate);
+      _log('Added remote ICE candidate');
+    } catch (e) {
+      _log('Error adding remote ICE candidate: $e');
+    }
+  }
+
+  // Handle remote answer to our offer
+  Future<void> _handleRemoteAnswer(Map<String, dynamic> data) async {
+    if (_peerConnection == null) return;
+    
+    try {
+      final sdp = data['answer']['sdp'];
+      final type = data['answer']['type'];
+      
+      await _peerConnection!.setRemoteDescription(
+        RTCSessionDescription(sdp, type),
+      );
+      
+      _log('Set remote description from answer');
+      _updateCallState(CallState.connecting);
+    } catch (e) {
+      _log('Error setting remote description: $e');
+    }
+  }
+
+  // End active call
+  Future<void> endCall([bool notifyRemote = true]) async {
+    await _endCall(notifyRemote);
+  }
+
+  // Internal end call implementation
+  Future<void> _endCall(bool notifyRemote) async {
+    if (!isInCall) return;
+    
+    // Notify the other peer if requested
+    if (notifyRemote && _remoteUser != null) {
+      final socket = SocketService();
+      socket.sendWebRTCEndCall(_remoteUser!.id);
+      _log('Sent end call signal');
     }
     
-    // Notify the other peer
-    if (_remoteUserId != null) {
-      _socketService.sendWebRTCEndCall(_remoteUserId!);
-    }
+    // Stop call timer
+    _callTimer?.cancel();
+    _callTimer = null;
     
-    // Clean up resources
-    _handleCallEnded();
-  }
-  
-  // Handle call ended (clean up resources)
-  void _handleCallEnded() {
-    print('WebRTC: Handling call end');
-    
-    // Clean up streams
-    _disposeMediaStreams();
-    
-    // Close peer connection
-    if (_peerConnection != null) {
-      _peerConnection!.close();
-      _peerConnection = null;
-    }
-    
-    // Reset call state
+    // Update state and clean up resources
     _updateCallState(CallState.ended);
+    await _cleanupCall();
     
-    // Clear call data after delay to allow UI to react
-    Future.delayed(Duration(seconds: 2), () {
-      _remoteUserId = null;
-      _remoteName = null;
-      _callStartTime = null;
-      _pendingOffer = null;
+    // Reset to idle state after a short delay
+    Future.delayed(Duration(seconds: 1), () {
       _updateCallState(CallState.idle);
     });
   }
-  
-  // Dispose media streams
-  void _disposeMediaStreams() {
-    // Stop all tracks and dispose local stream
-    if (_localStream != null) {
-      _localStream!.getTracks().forEach((track) => track.stop());
-      _localStream!.dispose();
-      _localStream = null;
-      _localStreamController.add(null);
-    }
+
+  // Clean up WebRTC resources
+  Future<void> _cleanupCall() async {
+    // Stop tracks and dispose local stream
+    _localStream?.getTracks().forEach((track) {
+      track.stop();
+    });
     
-    // Dispose remote stream
-    if (_remoteStream != null) {
-      _remoteStream!.dispose();
-      _remoteStream = null;
-      _remoteStreamController.add(null);
-    }
+    // Close peer connection
+    await _peerConnection?.close();
+    
+    // Clear streams
+    _localStreamController.add(null);
+    _remoteStreamController.add(null);
+    
+    // Reset state
+    _localStream = null;
+    _remoteStream = null;
+    _peerConnection = null;
+    _callStartTime = null;
+    _remoteUser = null;
+    
+    // Clear renderer sources
+    localRenderer?.srcObject = null;
+    remoteRenderer?.srcObject = null;
+    
+    _log('Call resources cleaned up');
   }
-  
+
+  // Start timer to track call duration
+  void _startCallTimer() {
+    _callTimer?.cancel();
+    _callStartTime = DateTime.now();
+    
+    _callTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (_callStartTime != null) {
+        final duration = DateTime.now().difference(_callStartTime!);
+        _callTimeController.add(duration);
+      }
+    });
+  }
+
   // Toggle camera (switch between front and back)
-  Future<void> toggleCamera() async {
+  Future<void> switchCamera() async {
     if (_localStream == null) return;
     
     final videoTrack = _localStream!.getVideoTracks().firstWhere(
@@ -511,11 +494,10 @@ class WebRTCService {
     
     if (videoTrack != null) {
       await Helper.switchCamera(videoTrack);
-    } else {
-      print('WebRTC: No video track found to switch camera');
+      _log('Camera switched');
     }
   }
-  
+
   // Toggle microphone mute state
   void toggleMicrophone(bool muted) {
     if (_localStream == null) return;
@@ -524,9 +506,9 @@ class WebRTCService {
       track.enabled = !muted;
     });
     
-    print('WebRTC: Microphone ${muted ? 'muted' : 'unmuted'}');
+    _log('Microphone ${muted ? 'muted' : 'unmuted'}');
   }
-  
+
   // Toggle video enabled state
   void toggleVideo(bool enabled) {
     if (_localStream == null) return;
@@ -535,23 +517,26 @@ class WebRTCService {
       track.enabled = enabled;
     });
     
-    print('WebRTC: Video ${enabled ? 'enabled' : 'disabled'}');
+    _log('Video ${enabled ? 'enabled' : 'disabled'}');
   }
-  
+
   // Dispose resources
   void dispose() {
     // End any active call
     if (isInCall) {
-      endCall();
+      _endCall(true);
     }
     
-    // Clean up resources
-    _disposeMediaStreams();
+    // Dispose renderers
+    localRenderer?.dispose();
+    remoteRenderer?.dispose();
     
     // Close streams
-    if (!_callStateController.isClosed) _callStateController.close();
-    if (!_localStreamController.isClosed) _localStreamController.close();
-    if (!_remoteStreamController.isClosed) _remoteStreamController.close();
-    if (!_remoteUserInfoController.isClosed) _remoteUserInfoController.close();
+    _callStateController.close();
+    _remoteStreamController.close();
+    _localStreamController.close();
+    _callTimeController.close();
+    
+    _log('WebRTC service disposed');
   }
 }
