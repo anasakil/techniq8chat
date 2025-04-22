@@ -1,8 +1,9 @@
 // screens/register_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:techniq8chat/screens/bottom_navigation_screen.dart';
+import 'package:techniq8chat/screens/conversations_screen.dart';
 import '../services/auth_service.dart';
+import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   @override
@@ -14,14 +15,10 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _keyController = TextEditingController();  // Added key controller
   bool _isLoading = false;
+  bool _obscurePassword = true;
   String _errorMessage = '';
-  bool _isValidatingKey = false;  // For key validation loading state
-  String? _keyValidationMessage;  // For key validation message
-  bool? _isKeyValid;  // For tracking key validation result
   
-  // Add animation controller for consistent design with login screen
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   
@@ -50,39 +47,8 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _keyController.dispose();  // Dispose key controller
     _animationController.dispose();
     super.dispose();
-  }
-
-  // Validate the key when input is complete
-  Future<void> _validateKey() async {
-    if (_keyController.text.length != 10) return;
-    
-    setState(() {
-      _isValidatingKey = true;
-      _keyValidationMessage = null;
-      _isKeyValid = null;
-    });
-    
-    try {
-      final authService = Provider.of<AuthService>(context, listen: false);
-      final isValid = await authService.checkKeyValidity(_keyController.text);
-      
-      setState(() {
-        _isKeyValid = isValid;
-        _keyValidationMessage = isValid 
-            ? 'Valid registration key' 
-            : 'Invalid or already used key';
-        _isValidatingKey = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isKeyValid = false;
-        _keyValidationMessage = 'Error checking key';
-        _isValidatingKey = false;
-      });
-    }
   }
 
   Future<void> _register() async {
@@ -99,12 +65,12 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
         _usernameController.text,
         _emailController.text,
         _passwordController.text,
-        _keyController.text,  // Add key to register method
+        'additionalArgument', 
       );
       
-      // Navigate to bottom navigation screen instead of conversations screen
+      // Navigate to conversations screen
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => BottomNavigationScreen()),
+        MaterialPageRoute(builder: (_) => ConversationsScreen()),
       );
     } catch (e) {
       setState(() {
@@ -122,31 +88,24 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: Colors.grey[800], size: 20),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          'Create Account',
-          style: TextStyle(
-            color: Colors.black87,
-            fontWeight: FontWeight.bold,
-          ),
+          icon: Icon(Icons.arrow_back, color: Colors.grey[700]),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: EdgeInsets.all(24),
+            padding: EdgeInsets.fromLTRB(24, 20, 24, 24),
             child: Form(
               key: _formKey,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo
+                  // Logo and App Name
                   FadeTransition(
                     opacity: _fadeAnimation,
                     child: Column(
@@ -166,19 +125,20 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                         ),
                         SizedBox(height: 20),
                         Text(
-                          'Join Techniq8Chat',
+                          'Create Account',
                           style: TextStyle(
-                            fontSize: 24,
+                            fontSize: 28,
                             fontWeight: FontWeight.bold,
                             color: Colors.black87,
+                            letterSpacing: 0.5,
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        SizedBox(height: 8),
+                        SizedBox(height: 12),
                         Text(
-                          'Create an account to get started',
+                          'Join TQCHAT today',
                           style: TextStyle(
-                            fontSize: 15,
+                            fontSize: 16,
                             color: Colors.grey[600],
                           ),
                           textAlign: TextAlign.center,
@@ -187,7 +147,7 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                     ),
                   ),
                   
-                  SizedBox(height: 32),
+                  SizedBox(height: 36),
                   
                   // Username Field
                   FadeTransition(
@@ -240,7 +200,7 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                       controller: _passwordController,
                       hintText: 'Password',
                       icon: Icons.lock_outline,
-                      obscureText: true,
+                      obscureText: _obscurePassword,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Please enter a password';
@@ -250,81 +210,21 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                         }
                         return null;
                       },
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          color: Colors.grey[600],
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
                     ),
                   ),
                   
                   SizedBox(height: 16),
-                  
-                  // Registration Key Field
-                  FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: _buildInputField(
-                      controller: _keyController,
-                      hintText: 'Registration Key (10 digits)',
-                      icon: Icons.key_outlined,
-                      keyboardType: TextInputType.number,
-                      suffixIcon: _isValidatingKey 
-                          ? SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : _isKeyValid != null
-                              ? Icon(
-                                  _isKeyValid! ? Icons.check_circle : Icons.error,
-                                  color: _isKeyValid! ? Colors.green : Colors.red,
-                                )
-                              : null,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your registration key';
-                        }
-                        if (value.length != 10) {
-                          return 'Key must be exactly 10 digits';
-                        }
-                        final keyRegex = RegExp(r'^\d{10}$');
-                        if (!keyRegex.hasMatch(value)) {
-                          return 'Key must be 10 numeric digits only';
-                        }
-                        // If key was validated and is invalid
-                        if (_isKeyValid != null && !_isKeyValid!) {
-                          return 'Please enter a valid registration key';
-                        }
-                        return null;
-                      },
-                      onChanged: (value) {
-                        // Clear validation when changed
-                        if (_isKeyValid != null) {
-                          setState(() {
-                            _isKeyValid = null;
-                            _keyValidationMessage = null;
-                          });
-                        }
-                        // Auto-validate when 10 digits entered
-                        if (value.length == 10) {
-                          _validateKey();
-                        }
-                      },
-                    ),
-                  ),
-                  
-                  // Key validation message
-                  if (_keyValidationMessage != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4.0, left: 8.0),
-                      child: Text(
-                        _keyValidationMessage!,
-                        style: TextStyle(
-                          color: _isKeyValid == true ? Colors.green : Colors.red,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  
-                  SizedBox(height: 10),
                   
                   // Error Message
                   if (_errorMessage.isNotEmpty)
@@ -350,7 +250,7 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                       ),
                     ),
                   
-                  SizedBox(height: 20),
+                  SizedBox(height: 24),
                   
                   // Register Button
                   FadeTransition(
@@ -384,16 +284,31 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                   
                   SizedBox(height: 24),
                   
-                  // Terms and Conditions
+                  // Login Link
                   FadeTransition(
                     opacity: _fadeAnimation,
-                    child: Text(
-                      'By creating an account, you agree to our Terms of Service and Privacy Policy',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 12,
-                      ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          "Already have an account?",
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => LoginScreen()),
+                            );
+                          },
+                          child: Text(
+                            "Sign In",
+                            style: TextStyle(
+                              color: const Color(0xFF2A64F6),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -413,7 +328,6 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
     Widget? suffixIcon,
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
-    Function(String)? onChanged,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -462,7 +376,6 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
           contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
         ),
         validator: validator,
-        onChanged: onChanged,
       ),
     );
   }

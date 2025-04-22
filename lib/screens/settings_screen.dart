@@ -1,8 +1,8 @@
-// screens/settings_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:techniq8chat/screens/profile_screen.dart';
 import 'package:techniq8chat/screens/login_screen.dart';
+import 'package:techniq8chat/screens/agora_test_screen.dart'; // Add import for Agora test screen
 import 'package:techniq8chat/services/auth_service.dart';
 import 'package:techniq8chat/services/hive_storage.dart';
 
@@ -121,55 +121,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
             ),
-            // _buildSettingItem(
-            //   icon: Icons.dark_mode_outlined,
-            //   title: 'Dark Mode',
-            //   trailing: Switch(
-            //     value: _darkModeEnabled,
-            //     activeColor: const Color(0xFF2A64F6),
-            //     onChanged: (value) {
-            //       setState(() {
-            //         _darkModeEnabled = value;
-            //       });
-            //       // In a real app, this would trigger theme changes
-            //     },
-            //   ),
-            // ),
-            // _buildSettingItem(
-            //   icon: Icons.language_outlined,
-            //   title: 'Language',
-            //   subtitle: _selectedLanguage,
-            //   onTap: () {
-            //     // Language selection dialog
-            //     _showLanguageDialog();
-            //   },
-            // ),
-            
-            SizedBox(height: 20),
-            
-            // Privacy and security
-            // _buildSectionHeader('Privacy and Security'),
-            // _buildSettingItem(
-            //   icon: Icons.lock_outline,
-            //   title: 'Privacy Settings',
-            //   onTap: () {
-            //     // Privacy settings screen navigation
-            //   },
-            // ),
-            // _buildSettingItem(
-            //   icon: Icons.security_outlined,
-            //   title: 'Security',
-            //   onTap: () {
-            //     // Security settings screen navigation
-            //   },
-            // ),
-            // _buildSettingItem(
-            //   icon: Icons.block_outlined,
-            //   title: 'Blocked Users',
-            //   onTap: () {
-            //     // Blocked users screen navigation
-            //   },
-            // ),
             
             SizedBox(height: 20),
             
@@ -184,22 +135,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _buildSettingItem(
               icon: Icons.info_outline,
-              title: 'About Techniq8Chat',
+              title: 'About TQCHAT',
               subtitle: 'Version 1.0.0',
               onTap: () {
                 // About screen navigation
               },
             ),
-             // Test Features
-            // _buildSectionHeader('Developer Tools'),
-            // _buildSettingItem(
-            //   icon: Icons.call,
-            //   title: 'WebRTC Call Test',
-            //   subtitle: 'Test call functionality',
-            //   onTap: () {
-            //     Navigator.pushNamed(context, '/test_call');
-            //   },
-            // ),
+            
+             // Developer Tools
+            _buildSectionHeader('Developer Tools'),
+            _buildSettingItem(
+              icon: Icons.call,
+              title: 'WebRTC Call Test',
+              subtitle: 'Original test call functionality',
+              onTap: () {
+                Navigator.pushNamed(context, '/test_call');
+              },
+            ),
+            _buildSettingItem(
+              icon: Icons.video_call,
+              title: 'Agora Call Test',
+              subtitle: 'Test Agora calling with debugging tools',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => AgoraTestScreen()),
+                );
+              },
+            ),
             
             SizedBox(height: 20),
             
@@ -408,68 +371,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   size: 24,
                 )
               : Container()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showLanguageDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Select Language'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildLanguageOption('English'),
-            _buildLanguageOption('Spanish'),
-            _buildLanguageOption('French'),
-            _buildLanguageOption('German'),
-            _buildLanguageOption('Arabic'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLanguageOption(String language) {
-    final isSelected = _selectedLanguage == language;
-    
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedLanguage = language;
-        });
-        Navigator.of(context).pop();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              language,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? const Color(0xFF2A64F6) : Colors.black87,
-              ),
-            ),
-            if (isSelected)
-              Icon(
-                Icons.check,
-                color: const Color(0xFF2A64F6),
-              ),
           ],
         ),
       ),

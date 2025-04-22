@@ -803,10 +803,7 @@ PreferredSizeWidget _buildAppBar() {
                       ),
 
                       // Message status indicator (only for sent messages)
-                      // if (isSent) ...[
-                      //   SizedBox(width: 4),
-                      //   _buildStatusIndicator(message.status),
-                      // ],
+                      // ²
                     ],
                   ),
                 ],

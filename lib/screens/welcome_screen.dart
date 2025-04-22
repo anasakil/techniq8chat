@@ -102,7 +102,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                         // App name
                         Text(
-                          'Techniq8Chat',
+                          'TQCHAT',
                           style: TextStyle(
                             fontSize: 36,
                             fontWeight: FontWeight.bold,

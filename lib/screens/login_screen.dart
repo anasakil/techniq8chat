@@ -1,8 +1,9 @@
 // screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:techniq8chat/screens/bottom_navigation_screen.dart'; // Updated import
+import 'package:techniq8chat/screens/conversations_screen.dart';
 import 'package:techniq8chat/screens/create_account_screen.dart';
+import 'package:techniq8chat/screens/forgot_password_screen.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -61,9 +62,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       final authService = Provider.of<AuthService>(context, listen: false);
       await authService.login(_emailController.text, _passwordController.text);
       
-      // Navigate to bottom navigation screen instead of conversations screen
+      // Navigate to conversations screen
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => BottomNavigationScreen()),
+        MaterialPageRoute(builder: (_) => ConversationsScreen()),
       );
     } catch (e) {
       setState(() {
@@ -110,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         ),
                         SizedBox(height: 24),
                         Text(
-                          'Techniq8Chat',
+                          'TQCHAT',
                           style: TextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.bold,
@@ -192,7 +193,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () {
-                        // Forgot password functionality placeholder
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => ForgotPasswordScreen()),
+                        );
+
                       },
                       child: Text(
                         'Forgot Password?',
