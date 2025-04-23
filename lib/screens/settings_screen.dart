@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:techniq8chat/screens/profile_screen.dart';
 import 'package:techniq8chat/screens/login_screen.dart';
-import 'package:techniq8chat/screens/agora_test_screen.dart'; // Add import for Agora test screen
 import 'package:techniq8chat/services/auth_service.dart';
 import 'package:techniq8chat/services/hive_storage.dart';
 
@@ -141,29 +140,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // About screen navigation
               },
             ),
-            
-             // Developer Tools
-            _buildSectionHeader('Developer Tools'),
-            _buildSettingItem(
-              icon: Icons.call,
-              title: 'WebRTC Call Test',
-              subtitle: 'Original test call functionality',
-              onTap: () {
-                Navigator.pushNamed(context, '/test_call');
-              },
-            ),
-            _buildSettingItem(
-              icon: Icons.video_call,
-              title: 'Agora Call Test',
-              subtitle: 'Test Agora calling with debugging tools',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => AgoraTestScreen()),
-                );
-              },
-            ),
-            
             SizedBox(height: 20),
             
             // Logout button

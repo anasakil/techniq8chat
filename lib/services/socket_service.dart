@@ -23,13 +23,17 @@ class SocketService {
   final _onMessageStatus = StreamController<Map<String, dynamic>>.broadcast();
   final _onUserStatus = StreamController<Map<String, String>>.broadcast();
   final _onTyping = StreamController<String>.broadcast();
-  
+
   // WebRTC Stream controllers
   final _onWebRTCOffer = StreamController<Map<String, dynamic>>.broadcast();
   final _onWebRTCAnswer = StreamController<Map<String, dynamic>>.broadcast();
-  final _onWebRTCIceCandidate = StreamController<Map<String, dynamic>>.broadcast();
+  final _onWebRTCIceCandidate =
+      StreamController<Map<String, dynamic>>.broadcast();
   final _onWebRTCEndCall = StreamController<String>.broadcast();
   final _onWebRTCCallRejected = StreamController<String>.broadcast();
+  Timer? _heartbeatTimer;
+  int _reconnectAttempts = 0;
+  final int _maxReconnectAttempts = 10;
 
   // Streams
   Stream<bool> get onConnected => _onConnected.stream;
@@ -37,11 +41,12 @@ class SocketService {
   Stream<Map<String, dynamic>> get onMessageStatus => _onMessageStatus.stream;
   Stream<Map<String, String>> get onUserStatus => _onUserStatus.stream;
   Stream<String> get onTyping => _onTyping.stream;
-  
+
   // WebRTC Streams
   Stream<Map<String, dynamic>> get onWebRTCOffer => _onWebRTCOffer.stream;
   Stream<Map<String, dynamic>> get onWebRTCAnswer => _onWebRTCAnswer.stream;
-  Stream<Map<String, dynamic>> get onWebRTCIceCandidate => _onWebRTCIceCandidate.stream;
+  Stream<Map<String, dynamic>> get onWebRTCIceCandidate =>
+      _onWebRTCIceCandidate.stream;
   Stream<String> get onWebRTCEndCall => _onWebRTCEndCall.stream;
   Stream<String> get onWebRTCCallRejected => _onWebRTCCallRejected.stream;
 
@@ -76,34 +81,57 @@ class SocketService {
       'reconnection': true,
       'reconnectionDelay': 1000,
       'reconnectionDelayMax': 5000,
-      'reconnectionAttempts': 10
+      'reconnectionAttempts': 10,
+      'timeout': 10000, // Increased timeout
+      'forceNew': false, // Ensure we don't create duplicate connections
     });
 
     _setupSocketListeners();
+
+    // Start the connection check timer immediately
+    _startConnectionCheck();
   }
 
+  // Enhance the reconnection timer
   void _startConnectionCheck() {
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer.periodic(Duration(seconds: 5), (timer) {
       if (!isConnected && _socket != null) {
         print('Connection check: attempting reconnect');
-        _socket!.connect();
+        try {
+          _socket!.connect();
+          // Also emit a ping to check the connection
+          _socket!.emit(
+              'ping', {'timestamp': DateTime.now().millisecondsSinceEpoch});
+        } catch (e) {
+          print('Error during reconnection attempt: $e');
+        }
       }
     });
   }
 
   // Set up socket event listeners
   void _setupSocketListeners() {
+    _socket?.on('pong', (_) {
+      print('Received pong from server');
+      // Reset reconnect attempts on successful pong
+      _reconnectAttempts = 0;
+    });
+
     _socket?.onConnect((_) {
       print('Socket connected: ${_socket?.id}');
       isConnected = true;
       _onConnected.add(true);
+      _reconnectAttempts = 0; // Reset reconnect attempts
 
       // Register user as connected
       if (currentUser != null) {
         print('Emitting user_connected with ID: ${currentUser!.id}');
         _socket?.emit('user_connected', currentUser!.id);
       }
+
+      // Start heartbeat
+      _startHeartbeat();
 
       // Process any queued messages
       _processMessageQueue();
@@ -113,7 +141,7 @@ class SocketService {
       print('Socket disconnected');
       isConnected = false;
       _onConnected.add(false);
-      
+
       // Start reconnection timer
       _startConnectionCheck();
     });
@@ -122,7 +150,7 @@ class SocketService {
       print('Connection error: $error');
       isConnected = false;
       _onConnected.add(false);
-      
+
       // Start reconnection timer
       _startConnectionCheck();
     });
@@ -227,7 +255,7 @@ class SocketService {
           // Save messages to Hive storage
           for (final message in messages) {
             await hiveStorage.saveMessage(message);
-            
+
             // Also update conversation for each message
             await hiveStorage.updateConversationFromMessage(message);
           }
@@ -258,7 +286,7 @@ class SocketService {
       final senderId = data['senderId'] ?? '';
       _onWebRTCEndCall.add(senderId);
     });
-    
+
     _socket?.on('webrtc_call_rejected', (data) {
       print('WebRTC call rejected received');
       final receiverId = data['receiverId'] ?? '';
@@ -282,8 +310,25 @@ class SocketService {
     }
   }
 
+  // Add this method to send heartbeats
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(Duration(seconds: 30), (timer) {
+      if (isConnected && _socket != null) {
+        try {
+          print('Sending heartbeat ping');
+          _socket!.emit(
+              'ping', {'timestamp': DateTime.now().millisecondsSinceEpoch});
+        } catch (e) {
+          print('Error sending heartbeat: $e');
+        }
+      }
+    });
+  }
+
   // Send a message
-  Future<void> sendMessage(String receiverId, String content, {String? tempId}) async {
+  Future<void> sendMessage(String receiverId, String content,
+      {String? tempId}) async {
     print('Sending message to $receiverId: $content (tempId: $tempId)');
 
     // Ensure we always have the current user before proceeding
@@ -330,7 +375,8 @@ class SocketService {
       return;
     }
 
-    print('Marking message as delivered - messageId: $messageId, senderId: $senderId');
+    print(
+        'Marking message as delivered - messageId: $messageId, senderId: $senderId');
     _socket?.emit('message_status_update', {
       'messageId': messageId,
       'status': 'delivered',
@@ -345,7 +391,8 @@ class SocketService {
       return;
     }
 
-    print('Marking message as read - messageId: $messageId, senderId: $senderId');
+    print(
+        'Marking message as read - messageId: $messageId, senderId: $senderId');
     _socket?.emit('message_read', {
       'messageId': messageId,
       'senderId': senderId,
@@ -376,70 +423,59 @@ class SocketService {
       'otherUserId': otherUserId,
     });
   }
-  
+
   // WebRTC signaling methods
   void sendWebRTCOffer(String receiverId, dynamic offer, String callType) {
     if (!isConnected) {
       print('Cannot send WebRTC offer: socket disconnected');
       return;
     }
-    
+
     print('Sending WebRTC offer to $receiverId');
-    _socket?.emit('webrtc_offer', {
-      'receiverId': receiverId,
-      'offer': offer,
-      'callType': callType
-    });
+    _socket?.emit('webrtc_offer',
+        {'receiverId': receiverId, 'offer': offer, 'callType': callType});
   }
-  
+
   void sendWebRTCAnswer(String receiverId, dynamic answer) {
     if (!isConnected) {
       print('Cannot send WebRTC answer: socket disconnected');
       return;
     }
-    
+
     print('Sending WebRTC answer to $receiverId');
-    _socket?.emit('webrtc_answer', {
-      'receiverId': receiverId,
-      'answer': answer
-    });
+    _socket
+        ?.emit('webrtc_answer', {'receiverId': receiverId, 'answer': answer});
   }
-  
+
   void sendWebRTCIceCandidate(String receiverId, dynamic candidate) {
     if (!isConnected) {
       print('Cannot send WebRTC ICE candidate: socket disconnected');
       return;
     }
-    
+
     print('Sending WebRTC ICE candidate to $receiverId');
-    _socket?.emit('webrtc_ice_candidate', {
-      'receiverId': receiverId,
-      'candidate': candidate
-    });
+    _socket?.emit('webrtc_ice_candidate',
+        {'receiverId': receiverId, 'candidate': candidate});
   }
-  
+
   void sendWebRTCEndCall(String receiverId) {
     if (!isConnected) {
       print('Cannot send WebRTC end call: socket disconnected');
       return;
     }
-    
+
     print('Sending WebRTC end call to $receiverId');
-    _socket?.emit('webrtc_end_call', {
-      'receiverId': receiverId
-    });
+    _socket?.emit('webrtc_end_call', {'receiverId': receiverId});
   }
-  
+
   void sendWebRTCRejectCall(String callerId) {
     if (!isConnected) {
       print('Cannot send WebRTC reject call: socket disconnected');
       return;
     }
-    
+
     print('Sending WebRTC reject call to $callerId');
-    _socket?.emit('webrtc_reject_call', {
-      'callerId': callerId
-    });
+    _socket?.emit('webrtc_reject_call', {'callerId': callerId});
   }
 
   // Force a reconnection attempt
@@ -461,19 +497,20 @@ class SocketService {
   // Clean up resources
   void dispose() {
     _reconnectTimer?.cancel();
+    _heartbeatTimer?.cancel();
     _onConnected.close();
     _onNewMessage.close();
     _onMessageStatus.close();
     _onUserStatus.close();
     _onTyping.close();
-    
+
     // Close WebRTC stream controllers
     _onWebRTCOffer.close();
     _onWebRTCAnswer.close();
     _onWebRTCIceCandidate.close();
     _onWebRTCEndCall.close();
     _onWebRTCCallRejected.close();
-    
+
     disconnect();
   }
 }

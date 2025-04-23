@@ -157,38 +157,39 @@ class AgoraService {
     ));
   }
 
-  // Get a token from your token server
-  Future<String?> _getToken(String channelId, {int uid = 0}) async {
-    try {
-      final token = _currentUser?.token;
-      if (token == null) throw 'User not authenticated';
-      
-      _log('Requesting Agora token for channel: $channelId, uid: $uid');
-      
-      final response = await http.post(
-        Uri.parse('$_baseUrl/calls/agora-token'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: json.encode({
-          'channelName': channelId,
-          'uid': uid,
-        }),
-      );
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        _log('Received token for channel: $channelId');
-        return data['token'];
-      } else {
-        throw 'Failed to get token: ${response.statusCode}, ${response.body}';
-      }
-    } catch (e) {
-      _log('Error getting token: $e');
-      return null;
+ 
+Future<String?> _getToken(String channelId, {int uid = 0}) async {
+  try {
+    final token = _currentUser?.token;
+    if (token == null) throw 'User not authenticated';
+    
+    _log('Requesting Agora token for channel: $channelId, uid: $uid');
+    
+    final response = await http.post(
+      Uri.parse('$_baseUrl/calls/agora-token'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: json.encode({
+        'channelName': channelId,
+        'uid': uid.toString(), // Convert to string to ensure it's properly sent
+      }),
+    );
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      _log('Received token for channel: $channelId');
+      return data['token'];
+    } else {
+      _log('Failed to get token: ${response.statusCode}, ${response.body}');
+      throw 'Failed to get token: ${response.statusCode}, ${response.body}';
     }
+  } catch (e) {
+    _log('Error getting token: $e');
+    return null;
   }
+}
 
   // Create a call record on the server
   Future<String?> _createCallRecord(String receiverId, CallType callType) async {

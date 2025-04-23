@@ -3,10 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:techniq8chat/screens/welcome_screen.dart';
 import 'package:techniq8chat/screens/bottom_navigation_screen.dart';
-import 'package:techniq8chat/screens/agora_test_screen.dart'; // Import for Agora test
-import 'package:techniq8chat/services/auth_service.dart';
-import 'package:techniq8chat/services/hive_storage.dart';
-import 'package:techniq8chat/services/call_handler_service.dart'; // Import call handler service
+import 'services/auth_service.dart';
+import 'services/hive_storage.dart';
 import 'screens/splash_screen.dart';
 
 void main() async {
@@ -19,41 +17,7 @@ void main() async {
   runApp(MyApp());
 }
 
-class MyApp extends StatefulWidget {
-  @override
-  _MyAppState createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  // Key for Navigator to access context
-  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-  
-  @override
-  void initState() {
-    super.initState();
-    // Initialize services after first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeServices();
-    });
-  }
-  
-  Future<void> _initializeServices() async {
-    try {
-      // Get context from navigator key
-      final context = navigatorKey.currentContext;
-      if (context == null) return;
-      
-      // Get auth service
-      final authService = Provider.of<AuthService>(context, listen: false);
-      
-      // Initialize call handler service
-      final callHandlerService = CallHandlerService();
-      await callHandlerService.initialize(context, authService);
-    } catch (e) {
-      print('Error initializing services: $e');
-    }
-  }
-
+class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -63,7 +27,6 @@ class _MyAppState extends State<MyApp> {
       ],
       child: MaterialApp(
         title: 'Techniq8Chat',
-        navigatorKey: navigatorKey, // Add navigator key
         theme: ThemeData(
           primaryColor: const Color(0xFF2A64F6),
           primarySwatch: Colors.blue,
@@ -76,9 +39,7 @@ class _MyAppState extends State<MyApp> {
         ),
         debugShowCheckedModeBanner: false,
         home: SplashScreen(),
-        routes: {
-          '/agora_test': (context) => AgoraTestScreen(), // Add route for Agora test screen
-        },
+       
       ),
     );
   }
