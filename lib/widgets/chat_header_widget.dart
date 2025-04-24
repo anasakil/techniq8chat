@@ -116,7 +116,7 @@ class ChatHeaderWidget extends StatelessWidget {
         backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
         radius: 20,
         backgroundImage: hasPicture
-            ? NetworkImage('http://51.178.138.50:4400/$profilePicture')
+            ? NetworkImage('http://192.168.100.242:4400/$profilePicture')
             : null,
         child: !hasPicture && username.isNotEmpty
             ? Text(

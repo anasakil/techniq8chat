@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techniq8chat/models/user_model.dart';
 
 class AuthService with ChangeNotifier {
-  final String baseUrl = 'http://51.178.138.50:4400';
+  final String baseUrl = 'http://192.168.100.242:4400';
   User? _currentUser;
 
   User? get currentUser => _currentUser;

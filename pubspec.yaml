@@ -53,6 +53,7 @@ dependencies:
   permission_handler_apple: ^9.4.7
   permission_handler_windows: ^0.2.1
   permission_handler_platform_interface: ^4.3.0
+  agora_rtc_engine: ^6.2.0
 
   
   # The following adds the Cupertino Icons font to your application.

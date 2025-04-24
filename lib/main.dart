@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:techniq8chat/screens/welcome_screen.dart';
 import 'package:techniq8chat/screens/bottom_navigation_screen.dart';
-import 'services/auth_service.dart';
-import 'services/hive_storage.dart';
-import 'screens/splash_screen.dart';
+import 'package:techniq8chat/services/auth_service.dart';
+import 'package:techniq8chat/services/hive_storage.dart';
+import 'package:techniq8chat/services/call_manager.dart';
+import 'package:techniq8chat/screens/splash_screen.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -17,7 +18,12 @@ void main() async {
   runApp(MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
+  @override
+  _MyAppState createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -39,8 +45,14 @@ class MyApp extends StatelessWidget {
         ),
         debugShowCheckedModeBanner: false,
         home: SplashScreen(),
-        
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    // Dispose of call manager when the app is closed
+    CallManager.instance?.dispose();
+    super.dispose();
   }
 }
