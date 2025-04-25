@@ -4,27 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:techniq8chat/models/user_model.dart';
-import 'package:techniq8chat/screens/test_agora_call.dart';
 import 'package:techniq8chat/screens/user_details_page.dart';
-import 'package:techniq8chat/screens/agora_call_screen.dart';
-import 'package:techniq8chat/services/call_manager.dart';
-import 'package:techniq8chat/utils/call_integration_helper.dart';
-import 'package:techniq8chat/utils/enhanced_call_handler.dart';
+import 'package:techniq8chat/screens/users_list_screen.dart';
 import '../models/message.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
 import '../services/hive_storage.dart';
 import 'dart:math' as Math;
 
+
 class ChatScreen extends StatefulWidget {
   final String conversationId;
   final String conversationName;
-  final String? profilePicture;
+  final String? profilePicture; // Added this line
 
   ChatScreen({
     required this.conversationId,
     required this.conversationName,
-    this.profilePicture,
+    this.profilePicture, // Added this parameter
   });
 
   @override
@@ -105,20 +102,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       currentUser.id,
       widget.conversationId,
     );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Import EnhancedCallHandler at the top of the file
-      // import 'package:techniq8chat/utils/enhanced_call_handler.dart';
-
-      // Initialize the enhanced call handler
-      EnhancedCallHandler.instance
-          .initialize(context, _socketService, authService);
-    });
-    // Initialize call integration helper
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      CallIntegrationHelper.instance
-          .initialize(context, _socketService, authService);
-    });
   }
 
   void _setupListeners() {
@@ -371,132 +354,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _initiateAudioCall() {
-    print(
-        'Starting audio call to ${widget.conversationName} (${widget.conversationId})');
-
-    // Get auth service for current user
-    final authService = Provider.of<AuthService>(context, listen: false);
-
-    // Ensure user is logged in
-    if (authService.currentUser == null) {
-      print('ERROR: No authenticated user available for making calls');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('You must be logged in to make calls')),
-      );
-      return;
-    }
-
-    // Make sure socket is connected
-    if (!_socketService.isConnected) {
-      print('Socket not connected, attempting to reconnect...');
-      _socketService.reconnect();
-
-      // Show message to user
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Connecting to server...')),
-      );
-
-      // Give some time for socket to connect
-      Future.delayed(Duration(seconds: 2), () {
-        if (_socketService.isConnected) {
-          _startAudioCall();
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Cannot connect to server. Try again later.')),
-          );
-        }
-      });
-
-      return;
-    }
-
-    _startAudioCall();
-  }
-
-  void _startAudioCall() {
-    try {
-      // Import EnhancedCallHandler at the top of the file
-      // import 'package:techniq8chat/utils/enhanced_call_handler.dart';
-
-      // Use EnhancedCallHandler instead of TestAgoraCallScreen
-      EnhancedCallHandler.instance.initialize(context, _socketService,
-          Provider.of<AuthService>(context, listen: false));
-      EnhancedCallHandler.instance.startCall(context, widget.conversationId,
-          widget.conversationName, CallType.audio);
-    } catch (e) {
-      print('Error starting audio call: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error starting call: $e')),
-      );
-    }
-  }
-
-  // Initiate a video call
-
-  void _initiateVideoCall() {
-    print(
-        'Starting video call to ${widget.conversationName} (${widget.conversationId})');
-
-    // Get auth service for current user
-    final authService = Provider.of<AuthService>(context, listen: false);
-
-    // Ensure user is logged in
-    if (authService.currentUser == null) {
-      print('ERROR: No authenticated user available for making calls');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('You must be logged in to make calls')),
-      );
-      return;
-    }
-
-    // Make sure socket is connected
-    if (!_socketService.isConnected) {
-      print('Socket not connected, attempting to reconnect...');
-      _socketService.reconnect();
-
-      // Show message to user
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Connecting to server...')),
-      );
-
-      // Give some time for socket to connect
-      Future.delayed(Duration(seconds: 2), () {
-        if (_socketService.isConnected) {
-          _startVideoCall();
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Cannot connect to server. Try again later.')),
-          );
-        }
-      });
-
-      return;
-    }
-
-    _startVideoCall();
-  }
-
-  void _startVideoCall() {
-    try {
-      // Import EnhancedCallHandler at the top of the file
-      // import 'package:techniq8chat/utils/enhanced_call_handler.dart';
-
-      // Use EnhancedCallHandler instead of TestAgoraCallScreen
-      EnhancedCallHandler.instance.initialize(context, _socketService,
-          Provider.of<AuthService>(context, listen: false));
-      EnhancedCallHandler.instance.startCall(context, widget.conversationId,
-          widget.conversationName, CallType.video);
-    } catch (e) {
-      print('Error starting video call: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error starting call: $e')),
-      );
-    }
-  }
-
   @override
   void dispose() {
     _messageController.dispose();
@@ -541,151 +398,35 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
     );
   }
-
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      elevation: 0,
-      backgroundColor: Colors.white,
-      foregroundColor: Colors.black87,
-      titleSpacing: 0,
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back_ios_new, size: 20),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-      title: GestureDetector(
-        onTap: () {
-          // Navigate to user details page when tapping on the user info
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => UserDetailsPage(
-                userId: widget.conversationId,
-                initialUsername: widget.conversationName,
-                initialProfilePicture: widget.profilePicture,
-              ),
+PreferredSizeWidget _buildAppBar() {
+  return AppBar(
+    elevation: 0,
+    backgroundColor: Colors.white,
+    foregroundColor: Colors.black87,
+    titleSpacing: 0,
+    leading: IconButton(
+      icon: Icon(Icons.arrow_back_ios_new, size: 20),
+      onPressed: () => Navigator.of(context).pop(),
+    ),
+    title: GestureDetector(
+      onTap: () {
+        // Navigate to user details page when tapping on the user info
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => UserDetailsPage(
+              userId: widget.conversationId,
+              initialUsername: widget.conversationName,
+              initialProfilePicture: widget.profilePicture,
             ),
-          );
-        },
-        child: Row(
-          children: [
-            // Make the avatar clickable as well
-            GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => UserDetailsPage(
-                      userId: widget.conversationId,
-                      initialUsername: widget.conversationName,
-                      initialProfilePicture: widget.profilePicture,
-                    ),
-                  ),
-                );
-              },
-              child: CircleAvatar(
-                backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
-                radius: 20,
-                backgroundImage: widget.profilePicture != null &&
-                        widget.profilePicture!.isNotEmpty &&
-                        !widget.profilePicture!.contains('default-avatar')
-                    ? NetworkImage(
-                        'http://192.168.100.83:4400/${widget.profilePicture}')
-                    : null,
-                child: (widget.profilePicture == null ||
-                            widget.profilePicture!.isEmpty ||
-                            widget.profilePicture!
-                                .contains('default-avatar')) &&
-                        widget.conversationName.isNotEmpty
-                    ? Text(
-                        widget.conversationName[0].toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF2A64F6),
-                        ),
-                      )
-                    : null,
-              ),
-            ),
-            SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.conversationName,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Colors.black87,
-                  ),
-                ),
-                Text(
-                  _isConnected ? 'Online' : 'Offline',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.normal,
-                    color: _isConnected ? Colors.green : Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        // Audio call button
-        IconButton(
-          icon: Icon(Icons.call, color: const Color(0xFF2A64F6)),
-          onPressed: _initiateAudioCall,
-          tooltip: 'Audio Call',
-        ),
-        // Video call button
-        IconButton(
-          icon: Icon(Icons.videocam, color: const Color(0xFF2A64F6)),
-          onPressed: _initiateVideoCall,
-          tooltip: 'Video Call',
-        ),
-        // More options menu
-        IconButton(
-          icon: Icon(Icons.more_vert),
-          onPressed: () {
-            showModalBottomSheet(
-              context: context,
-              builder: (context) => _buildMoreOptionsMenu(),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMoreOptionsMenu() {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+          ),
+        );
+      },
+      child: Row(
         children: [
-          ListTile(
-            leading: Icon(Icons.call, color: const Color(0xFF2A64F6)),
-            title: Text('Audio Call'),
+          // Make the avatar clickable as well
+          GestureDetector(
             onTap: () {
-              Navigator.pop(context);
-              _initiateAudioCall();
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.videocam, color: const Color(0xFF2A64F6)),
-            title: Text('Video Call'),
-            onTap: () {
-              Navigator.pop(context);
-              _initiateVideoCall();
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('View Contact Info'),
-            onTap: () {
-              Navigator.pop(context);
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -697,19 +438,76 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               );
             },
+            child: CircleAvatar(
+              backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
+              radius: 20,
+              backgroundImage: widget.profilePicture != null && 
+                           widget.profilePicture!.isNotEmpty &&
+                           !widget.profilePicture!.contains('default-avatar')
+                  ? NetworkImage('http://192.168.100.5:4400/${widget.profilePicture}')
+                  : null,
+              child: (widget.profilePicture == null || 
+                     widget.profilePicture!.isEmpty ||
+                     widget.profilePicture!.contains('default-avatar')) &&
+                     widget.conversationName.isNotEmpty
+                  ? Text(
+                      widget.conversationName[0].toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF2A64F6),
+                      ),
+                    )
+                  : null,
+            ),
           ),
-          ListTile(
-            leading: Icon(Icons.delete_outline, color: Colors.red),
-            title: Text('Clear Chat'),
-            onTap: () {
-              // Implement clear chat functionality
-              Navigator.pop(context);
-            },
+          SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.conversationName,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Colors.black87,
+                ),
+              ),
+              Text(
+                _isConnected ? 'Online' : 'Offline',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.normal,
+                  color: _isConnected ? Colors.green : Colors.grey,
+                ),
+              ),
+            ],
           ),
         ],
       ),
-    );
-  }
+    ),
+    actions: [
+      IconButton(
+        icon: Icon(Icons.phone_outlined),
+        onPressed: () {
+          Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => UsersListScreen()
+          )
+        );
+        
+        },
+      ),
+      IconButton(
+        icon: Icon(Icons.more_vert),
+        onPressed: () {
+          // More options menu placeholder
+        },
+      ),
+    ],
+  );
+}
 
   Widget _buildTypingIndicatorBar() {
     return Container(

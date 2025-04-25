@@ -1,13 +1,15 @@
 // screens/calls_screen.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:techniq8chat/screens/users_list_screen.dart';
 
 class CallsScreen extends StatefulWidget {
   @override
   _CallsScreenState createState() => _CallsScreenState();
 }
 
-class _CallsScreenState extends State<CallsScreen> with SingleTickerProviderStateMixin {
+class _CallsScreenState extends State<CallsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<CallLog> _recentCalls = [];
   bool _isLoading = false;
@@ -28,48 +30,7 @@ class _CallsScreenState extends State<CallsScreen> with SingleTickerProviderStat
     // Simulate network delay
     Future.delayed(Duration(milliseconds: 500), () {
       setState(() {
-        _recentCalls = [
-          CallLog(
-            name: "Sarah Johnson",
-            profilePicture: null,
-            callType: CallType.incoming,
-            callTime: DateTime.now().subtract(Duration(hours: 1)),
-            missed: false,
-            callDuration: Duration(minutes: 5, seconds: 23),
-          ),
-          CallLog(
-            name: "Alex Thompson",
-            profilePicture: null,
-            callType: CallType.outgoing,
-            callTime: DateTime.now().subtract(Duration(hours: 3)),
-            missed: false,
-            callDuration: Duration(minutes: 12, seconds: 7),
-          ),
-          CallLog(
-            name: "Michael Chen",
-            profilePicture: null,
-            callType: CallType.incoming,
-            callTime: DateTime.now().subtract(Duration(hours: 5)),
-            missed: true,
-            callDuration: null,
-          ),
-          CallLog(
-            name: "Jessica Wilson",
-            profilePicture: null,
-            callType: CallType.outgoing,
-            callTime: DateTime.now().subtract(Duration(days: 1)),
-            missed: false,
-            callDuration: Duration(minutes: 3, seconds: 41),
-          ),
-          CallLog(
-            name: "David Miller",
-            profilePicture: null,
-            callType: CallType.incoming,
-            callTime: DateTime.now().subtract(Duration(days: 1, hours: 4)),
-            missed: true,
-            callDuration: null,
-          ),
-        ];
+        _recentCalls = [];
         _isLoading = false;
       });
     });
@@ -123,13 +84,18 @@ class _CallsScreenState extends State<CallsScreen> with SingleTickerProviderStat
         children: [
           // Recent calls tab
           _isLoading
-              ? Center(child: CircularProgressIndicator(color: const Color(0xFF2A64F6)))
+              ? Center(
+                  child:
+                      CircularProgressIndicator(color: const Color(0xFF2A64F6)))
               : _buildCallsList(_recentCalls),
 
           // Missed calls tab
           _isLoading
-              ? Center(child: CircularProgressIndicator(color: const Color(0xFF2A64F6)))
-              : _buildCallsList(_recentCalls.where((call) => call.missed).toList()),
+              ? Center(
+                  child:
+                      CircularProgressIndicator(color: const Color(0xFF2A64F6)))
+              : _buildCallsList(
+                  _recentCalls.where((call) => call.missed).toList()),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -227,7 +193,9 @@ class _CallsScreenState extends State<CallsScreen> with SingleTickerProviderStat
             CircleAvatar(
               radius: 24,
               backgroundColor: const Color(0xFF2A64F6).withOpacity(0.1),
-              backgroundImage: call.profilePicture != null ? NetworkImage(call.profilePicture!) : null,
+              backgroundImage: call.profilePicture != null
+                  ? NetworkImage(call.profilePicture!)
+                  : null,
               child: call.profilePicture == null && call.name.isNotEmpty
                   ? Text(
                       call.name[0].toUpperCase(),
@@ -240,7 +208,7 @@ class _CallsScreenState extends State<CallsScreen> with SingleTickerProviderStat
                   : null,
             ),
             SizedBox(width: 16),
-            
+
             // Call details
             Expanded(
               child: Column(
@@ -254,7 +222,8 @@ class _CallsScreenState extends State<CallsScreen> with SingleTickerProviderStat
                         child: Text(
                           call.name,
                           style: TextStyle(
-                            fontWeight: call.missed ? FontWeight.bold : FontWeight.w600,
+                            fontWeight:
+                                call.missed ? FontWeight.bold : FontWeight.w600,
                             fontSize: 16,
                             color: Colors.black87,
                           ),
@@ -271,9 +240,9 @@ class _CallsScreenState extends State<CallsScreen> with SingleTickerProviderStat
                       ),
                     ],
                   ),
-                  
+
                   SizedBox(height: 4),
-                  
+
                   // Call info and icon
                   Row(
                     children: [
@@ -284,14 +253,15 @@ class _CallsScreenState extends State<CallsScreen> with SingleTickerProviderStat
                       ),
                       SizedBox(width: 8),
                       Text(
-                        call.missed 
+                        call.missed
                             ? 'Missed Call'
-                            : call.callDuration != null 
+                            : call.callDuration != null
                                 ? _formatDuration(call.callDuration!)
                                 : '',
                         style: TextStyle(
                           color: call.missed ? Colors.red : Colors.grey[600],
-                          fontWeight: call.missed ? FontWeight.w500 : FontWeight.normal,
+                          fontWeight:
+                              call.missed ? FontWeight.w500 : FontWeight.normal,
                           fontSize: 14,
                         ),
                       ),
@@ -300,12 +270,13 @@ class _CallsScreenState extends State<CallsScreen> with SingleTickerProviderStat
                 ],
               ),
             ),
-            
+
             // Call button
             IconButton(
               icon: Icon(Icons.call, color: const Color(0xFF2A64F6)),
               onPressed: () {
-                // Call functionality
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (context) => UsersListScreen()));
               },
             ),
           ],
