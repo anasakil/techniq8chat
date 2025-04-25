@@ -11,8 +11,9 @@ import 'package:http/http.dart' as http;
 class SocketService {
   // Socket connection
   IO.Socket? _socket;
+  
   bool isConnected = false;
-  final String serverUrl = 'http://192.168.100.242:4400';
+  final String serverUrl = 'http://192.168.100.83:4400';
 
   // Service dependencies
   final HiveStorage hiveStorage = HiveStorage();
@@ -305,10 +306,35 @@ class SocketService {
     });
     
     // Incoming call event
-    _socket?.on('incoming_call', (data) {
-      print('Incoming call received: $data');
-      // This will be handled by UI layer
+_socket?.on('incoming_call', (data) {
+  print('Incoming call received from socket: $data');
+  try {
+    // Extract data from the incoming call
+    final callerId = data['callerId'];
+    final callId = data['callId'];
+    final callType = data['callType'] ?? 'audio';
+    String? callerName = data['callerName'];
+    
+    // If caller name is not provided, try to get it from our data
+    if (callerName == null && data['caller'] is Map && data['caller']['username'] != null) {
+      callerName = data['caller']['username'];
+    }
+    
+    // Log the incoming call data for debugging
+    print('Incoming call from $callerId, call ID: $callId, type: $callType, caller name: $callerName');
+    
+    // Emit this as a WebRTC offer as well for compatibility
+    // This ensures both systems can handle the call
+    _onWebRTCOffer.add({
+      'senderId': callerId,
+      'callId': callId,
+      'callType': callType,
+      'callerName': callerName,
     });
+  } catch (e) {
+    print('Error processing incoming call event: $e');
+  }
+});
   }
 
   Future<void> _updateConversation(Message message) async {
@@ -357,7 +383,7 @@ class SocketService {
           // Fetch user details from the API
           try {
             final response = await http.get(
-              Uri.parse('http://192.168.100.242:4400/api/users/$conversationId'),
+              Uri.parse('http://192.168.100.83:4400/api/users/$conversationId'),
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ${currentUser!.token}',

@@ -59,7 +59,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       // Fetch user data from API
       final response = await http.get(
-        Uri.parse('http://192.168.100.242:4400/api/users/me'),
+        Uri.parse('http://192.168.100.83:4400/api/users/me'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -120,7 +120,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Create multipart request
       var request = http.MultipartRequest(
         'PUT',
-        Uri.parse('http://192.168.100.242:4400/api/users/me'),
+        Uri.parse('http://192.168.100.83:4400/api/users/me'),
       );
 
       // Add headers
@@ -555,7 +555,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   )
                 : _profilePicture != null && _profilePicture!.isNotEmpty
                     ? Image.network(
-                        'http://192.168.100.242:4400/${_profilePicture}',
+                        'http://192.168.100.83:4400/${_profilePicture}',
                         width: 120,
                         height: 120,
                         fit: BoxFit.cover,

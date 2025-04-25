@@ -258,7 +258,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               backgroundImage: _profilePicture != null && 
                        _profilePicture!.isNotEmpty &&
                        !_profilePicture!.contains('default-avatar')
-                ? NetworkImage('http://192.168.100.242:4400/${_profilePicture}')
+                ? NetworkImage('http://192.168.100.83:4400/${_profilePicture}')
                 : null,
               child: (_profilePicture == null || 
                       _profilePicture!.isEmpty ||

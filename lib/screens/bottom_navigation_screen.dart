@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:techniq8chat/screens/conversations_screen.dart';
 import 'package:techniq8chat/screens/settings_screen.dart';
 import 'package:techniq8chat/screens/calls_screen.dart';
+import 'package:techniq8chat/screens/test_agora_call.dart';
 
 
 class BottomNavigationScreen extends StatefulWidget {
@@ -16,7 +17,7 @@ class _BottomNavigationScreenState extends State<BottomNavigationScreen> {
 
   final List<Widget> _screens = [
     ConversationsScreen(),
-    CallsScreen(),
+    TestAgoraCallScreen(),
     SettingsScreen(),
   ];
 
