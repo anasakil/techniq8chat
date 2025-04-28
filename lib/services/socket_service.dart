@@ -12,13 +12,19 @@ class SocketService {
   IO.Socket? _socket;
 
   bool isConnected = false;
-  final String serverUrl = 'http://192.168.100.83:4400';
+  final String serverUrl =
+      'http://192.168.100.83:4400'; // Update with your server URL
 
   // Service dependencies
   final HiveStorage hiveStorage = HiveStorage();
 
   // Current user
   User? currentUser;
+
+  // Call tracking to prevent duplicates
+  final Set<String> _activeCallIds = {};
+  bool _isProcessingCall = false;
+  Timer? _callProcessingTimer;
 
   // Stream controllers
   final _onConnected = StreamController<bool>.broadcast();
@@ -284,12 +290,17 @@ class SocketService {
       }
     });
 
-    // WebRTC related events
-    _socket?.on('webrtc_offer', (data) {
-      print('WebRTC offer received: $data');
+    _socket?.on('incoming_call', (data) {
+      print('Socket received incoming_call, forwarding to stream');
       _onWebRTCOffer.add(data);
     });
 
+    _socket?.on('webrtc_offer', (data) {
+      print('Socket received webrtc_offer, forwarding to stream');
+      _onWebRTCOffer.add(data);
+    });
+
+    // Other WebRTC related events
     _socket?.on('webrtc_answer', (data) {
       print('WebRTC answer received: $data');
       _onWebRTCAnswer.add(data);
@@ -310,38 +321,128 @@ class SocketService {
       print('WebRTC call rejected received');
       final receiverId = data['receiverId'] ?? '';
       _onWebRTCCallRejected.add(receiverId);
-    });
 
-    // Incoming call event
-    _socket?.on('incoming_call', (data) {
-      print('Incoming callERERERE received from socket: $data');
-      try {
-        // Extract data from the incoming call
-        final callerId = data['callerId'];
-        final callId = data['callId'];
-        final callType = data['callType'] ?? 'audio';
-        String? callerName = data['callerName'];
-
-        if (callerName == null &&
-            data['caller'] is Map &&
-            data['caller']['username'] != null) {
-          callerName = data['caller']['username'];
-        }
-
-        print(
-            'Incoming callezeze from $callerId, call ID: $callId, type: $callType, caller name: $callerName');
-
-       
-        _onWebRTCOffer.add({
-          'senderId': callerId,
-          'callId': callId,
-          'callType': callType,
-          'callerName': callerName,
-        });
-      } catch (e) {
-        print('Error processing incoming call event: $e');
+      // Clear call processing state when a call is rejected
+      if (data['callId'] != null) {
+        completeCallProcessing(data['callId']);
       }
     });
+
+    _socket?.on('call_answered', (data) {
+      print('Call answered event received: $data');
+      // Clear call processing state when a call is answered
+      if (data['callId'] != null) {
+        completeCallProcessing(data['callId']);
+      }
+    });
+
+    _socket?.on('call_ended', (data) {
+      print('Call ended event received: $data');
+      // Clear call processing state when a call is ended
+      if (data['callId'] != null) {
+        completeCallProcessing(data['callId']);
+      }
+    });
+
+    _socket?.on('call_rejected', (data) {
+      print('Call rejected event received: $data');
+      // Clear call processing state when a call is rejected
+      if (data['callId'] != null) {
+        completeCallProcessing(data['callId']);
+      }
+    });
+  }
+
+  // Combined handler for both incoming_call and webrtc_offer events
+  void _handleIncomingCallEvent(dynamic data, String eventType) {
+    print('Processing $eventType event: $data');
+    try {
+      // Extract core data with safety checks
+      final callerId = data['callerId'] ?? data['senderId'];
+      final callId = data['callId'];
+      final callType = data['callType'] ?? 'audio';
+      String? callerName = data['callerName'];
+
+      if (callerId == null || callId == null) {
+        print('Invalid call data: missing callerId or callId');
+        return;
+      }
+
+      // Try to get caller name if not directly available
+      if (callerName == null || callerName.isEmpty) {
+        if (data['caller'] is Map && data['caller']['username'] != null) {
+          callerName = data['caller']['username'];
+        } else {
+          // Try to find user info from current user's contacts
+          // This is optional and depends on your app's structure
+          callerName = 'Unknown User';
+        }
+      }
+
+      print('Call from $callerId ($callerName), ID: $callId, type: $callType');
+
+      // Prevent multiple processing of the same call ID
+      if (_activeCallIds.contains(callId)) {
+        print('Already processing call ID: $callId - ignoring duplicate');
+        return;
+      }
+
+      // Prevent concurrent call processing (can cause UI conflicts)
+      if (_isProcessingCall) {
+        print('Another call is being processed - queuing this one');
+
+        // Add to active IDs but with a timeout to prevent permanent blocking
+        _activeCallIds.add(callId);
+        Timer(Duration(seconds: 3), () {
+          _activeCallIds.remove(callId);
+
+          // Try processing again if no other call is active
+          if (!_isProcessingCall) {
+            _processCallEvent(callerId, callerName, callId, callType);
+          }
+        });
+        return;
+      }
+
+      _processCallEvent(callerId, callerName, callId, callType);
+    } catch (e) {
+      print('Error handling call event: $e');
+      _isProcessingCall = false;
+    }
+  }
+
+  void _processCallEvent(
+      String callerId, String? callerName, String callId, String callType) {
+    print('Processing call event for ID: $callId');
+    _isProcessingCall = true;
+    _activeCallIds.add(callId);
+
+    // Create a consistently structured event
+    final callEvent = {
+      'callerId': callerId,
+      'callerName': callerName ?? 'Unknown User',
+      'callId': callId,
+      'callType': callType,
+    };
+
+    // Emit to stream (only once per call)
+    _onWebRTCOffer.add(callEvent);
+
+    // Set a timer to clear processing state
+    _callProcessingTimer?.cancel();
+    _callProcessingTimer = Timer(Duration(seconds: 15), () {
+      print('Call processing timeout for ID: $callId');
+      _isProcessingCall = false;
+      _activeCallIds.remove(callId);
+    });
+  }
+
+  // Call this when call is answered or rejected
+  void completeCallProcessing(String callId) {
+    print('Completing call processing for ID: $callId');
+    _isProcessingCall = false;
+    _activeCallIds.remove(callId);
+    _callProcessingTimer?.cancel();
   }
 
   Future<void> _updateConversation(Message message) async {
@@ -394,7 +495,7 @@ class SocketService {
           // Fetch user details from the API
           try {
             final response = await http.get(
-              Uri.parse('http://192.168.100.83:4400/api/users/$conversationId'),
+              Uri.parse('$serverUrl/api/users/$conversationId'),
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ${currentUser!.token}',
@@ -645,6 +746,7 @@ class SocketService {
   // Clean up resources
   void dispose() {
     _reconnectTimer?.cancel();
+    _callProcessingTimer?.cancel();
     _onConnected.close();
     _onNewMessage.close();
     _onMessageStatus.close();

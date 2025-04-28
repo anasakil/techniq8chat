@@ -1,152 +1,211 @@
-// services/simple_call_handler.dart
+// services/standalone_call_handler.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:techniq8chat/screens/incoming_call_screen.dart';
 import 'package:techniq8chat/services/socket_service.dart';
 
-/// A simplified call handler that focuses on UI display without notifications
-class SimpleCallHandler {
-  static final SimpleCallHandler _instance = SimpleCallHandler._internal();
-  factory SimpleCallHandler() => _instance;
-  SimpleCallHandler._internal();
+class StandaloneCallHandler {
+  // Singleton pattern
+  static final StandaloneCallHandler _instance = StandaloneCallHandler._internal();
+  factory StandaloneCallHandler() => _instance;
+  StandaloneCallHandler._internal();
 
-  bool _isInitialized = false;
-  bool _handlingCall = false;
-  GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  // Global navigator key
+  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   
-  // Handle to top-level overlay entry when showing call UI
-  OverlayEntry? _activeCallOverlay;
+  // Call tracking variables
+  String? _currentCallId;
+  bool _isInitialized = false;
+  bool _isHandlingCall = false;
+  StreamSubscription? _callSubscription;
+  
+  // Timer to reset state if call UI fails to show
+  Timer? _callStateResetTimer;
 
+  // Initialize call handler
   void initialize(SocketService socketService) {
-    if (_isInitialized) return;
+    // Prevent multiple initializations
+    if (_isInitialized) {
+      print('StandaloneCallHandler: Already initialized');
+      return;
+    }
+
+    print('StandaloneCallHandler: Initializing');
+    _isInitialized = true;
+
+    // Listen to WebRTC offer stream
+    _callSubscription = socketService.onWebRTCOffer.listen(
+      (callData) {
+        print('StandaloneCallHandler: Received call data from stream - $callData');
+        _handleIncomingCall(callData);
+      },
+      onError: (error) {
+        print('StandaloneCallHandler: Error in call stream - $error');
+      },
+      cancelOnError: false,
+    );
     
-    print("Initializing SimpleCallHandler");
-    
-    // Set up listeners for incoming calls
+    // Also listen directly to socket events as backup
     socketService.socket?.on('incoming_call', (data) {
-      print("DIRECT INCOMING CALL EVENT: $data");
-      _showIncomingCallUI(data);
+      print('StandaloneCallHandler: Direct incoming call event - $data');
+      _handleIncomingCall(data);
     });
     
     socketService.socket?.on('webrtc_offer', (data) {
-      print("DIRECT WEBRTC OFFER EVENT: $data");
-      _showIncomingCallUI(data);
+      print('StandaloneCallHandler: Direct webrtc_offer event - $data');
+      _handleIncomingCall(data);
     });
-    
-    _isInitialized = true;
   }
-  
-  void _showIncomingCallUI(Map<String, dynamic> callData) {
-    // Prevent multiple incoming call screens
-    if (_handlingCall) {
-      print("Already handling a call, ignoring new incoming call");
-      return;
+
+  // Handle incoming call
+  void _handleIncomingCall(Map<String, dynamic> callData) {
+    // Normalize the call data field names
+    final Map<String, dynamic> normalizedCallData = Map.from(callData);
+    
+    // Handle different field name patterns
+    if (normalizedCallData['callerId'] == null && normalizedCallData['senderId'] != null) {
+      normalizedCallData['callerId'] = normalizedCallData['senderId'];
     }
     
-    print("Attempting to show incoming call UI: $callData");
-    _handlingCall = true;
+    if (normalizedCallData['senderId'] == null && normalizedCallData['callerId'] != null) {
+      normalizedCallData['senderId'] = normalizedCallData['callerId'];
+    }
     
-    // Try to get current context
+    // Extract normalized data
+    final callId = normalizedCallData['callId'];
+    final callerId = normalizedCallData['callerId'] ?? normalizedCallData['senderId'];
+    final callerName = normalizedCallData['callerName'] ?? 'Unknown User';
+    final callType = normalizedCallData['callType'] ?? 'audio';
+
+    print('StandaloneCallHandler: Normalized call data - caller: $callerId, call: $callId, type: $callType');
+
+    // Validate normalized data
+    if (callId == null || callerId == null) {
+      print('StandaloneCallHandler: Invalid call data after normalization');
+      return;
+    }
+
+    // If we're already handling a call, but it's been a while, we might have a stale state
+    // Force reset if it's the same call ID (might be a retry)
+    if (_isHandlingCall && _currentCallId == callId) {
+      print('StandaloneCallHandler: Same call ID detected, forcing reset of state');
+      _resetCallState();
+    }
+    // For different call while handling another, just log and exit
+    else if (_isHandlingCall) {
+      print('StandaloneCallHandler: Already handling a different call, ignoring new call');
+      return;
+    }
+
+    // Ensure we have a valid context
     final context = navigatorKey.currentContext;
     if (context == null) {
-      print("ERROR: No valid context to show incoming call screen");
-      _handlingCall = false;
+      print('StandaloneCallHandler: No valid navigator context');
       return;
     }
+
+    // Mark as handling call
+    _isHandlingCall = true;
+    _currentCallId = callId;
     
-    // Try to wake up the device screen
-    SystemChannels.platform.invokeMethod('SystemChrome.setEnabledSystemUIMode', []);
-    
-    // Ensure we're on the UI thread
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      try {
-        print("SHOWING INCOMING CALL UI");
-        
-        // Try several methods to ensure UI appears
-        
-        // Method 1: Dialog
-        _tryShowDialog(context, callData);
-        
-        // Method 2: Overlay (as backup)
-        if (context.mounted) {
-          _tryShowOverlay(context, callData);
-        }
-      } catch (e) {
-        print("ERROR SHOWING INCOMING CALL UI: $e");
-        _handlingCall = false;
+    // Set a timer to reset state if the UI doesn't show after 10 seconds
+    _callStateResetTimer?.cancel();
+    _callStateResetTimer = Timer(Duration(seconds: 10), () {
+      print('StandaloneCallHandler: Call state reset timer triggered');
+      if (_isHandlingCall) {
+        print('StandaloneCallHandler: State still showing handling, but UI might have failed - resetting');
+        _resetCallState();
       }
     });
+
+    // Prepare call data for screen - ensure it has the expected fields
+    final processedCallData = {
+      'callId': callId,
+      'callerId': callerId,
+      'callerName': callerName,
+      'callType': callType,
+    };
+
+    print('StandaloneCallHandler: Processed call data ready for screen - $processedCallData');
+
+    // Ensure we're on the UI thread with a post-frame callback
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showIncomingCallScreen(context, processedCallData);
+    });
   }
-  
-  void _tryShowDialog(BuildContext context, Map<String, dynamic> callData) {
+
+  // Show incoming call screen
+  void _showIncomingCallScreen(
+    BuildContext context, 
+    Map<String, dynamic> callData
+  ) {
+    // Double-check our state
+    if (!_isHandlingCall) {
+      print('StandaloneCallHandler: Not handling call anymore, aborting screen display');
+      return;
+    }
+
     try {
-      showGeneralDialog(
+      // Wake up device
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual, 
+        overlays: SystemUiOverlay.values
+      );
+
+      print('StandaloneCallHandler: Attempting to show incoming call screen now');
+
+      // Use showDialog instead of showGeneralDialog for simpler implementation
+      showDialog(
         context: context,
         barrierDismissible: false,
-        transitionDuration: Duration(milliseconds: 300),
-        barrierColor: Colors.black.withOpacity(0.5),
-        pageBuilder: (context, animation, secondaryAnimation) {
+        builder: (dialogContext) {
+          print('StandaloneCallHandler: Dialog builder called');
           return WillPopScope(
             onWillPop: () async => false, // Prevent back button
-            child: Material(
-              type: MaterialType.transparency,
-              child: IncomingCallScreen(
-                callData: callData,
-                onClose: () {
-                  _handlingCall = false;
-                },
-              ),
+            child: IncomingCallScreen(
+              callData: callData,
+              onClose: () {
+                print('StandaloneCallHandler: Call screen closing callback');
+                Navigator.of(dialogContext).pop();
+                _resetCallState();
+              },
             ),
           );
         },
       ).then((_) {
-        // Ensure flag is reset if dialog is closed
-        _handlingCall = false;
+        print('StandaloneCallHandler: Dialog closed');
+        _resetCallState();
       });
       
-      print("Dialog shown successfully");
+      print('StandaloneCallHandler: showDialog called successfully');
     } catch (e) {
-      print("Error showing dialog: $e");
+      print('StandaloneCallHandler: Error showing call screen - $e');
+      _resetCallState();
     }
   }
-  
-  void _tryShowOverlay(BuildContext context, Map<String, dynamic> callData) {
-    try {
-      // Remove any existing overlay
-      _activeCallOverlay?.remove();
-      _activeCallOverlay = null;
-      
-      // Create new overlay
-      final overlay = OverlayEntry(
-        builder: (context) => Material(
-          type: MaterialType.transparency,
-          child: IncomingCallScreen(
-            callData: callData,
-            onClose: () {
-              _activeCallOverlay?.remove();
-              _activeCallOverlay = null;
-              _handlingCall = false;
-            },
-          ),
-        ),
-      );
-      
-      // Insert the overlay
-      Overlay.of(context).insert(overlay);
-      _activeCallOverlay = overlay;
-      
-      print("Overlay shown successfully");
-    } catch (e) {
-      print("Error showing overlay: $e");
-    }
+
+  // Reset call handling state
+  void _resetCallState() {
+    print('StandaloneCallHandler: Resetting call state');
+    _callStateResetTimer?.cancel();
+    _callStateResetTimer = null;
+    _isHandlingCall = false;
+    _currentCallId = null;
   }
-  
-  void dismissCurrentCall() {
-    if (_activeCallOverlay != null) {
-      _activeCallOverlay?.remove();
-      _activeCallOverlay = null;
-    }
-    _handlingCall = false;
+
+  // Force reset the call state (for external use)
+  void forceResetState() {
+    print('StandaloneCallHandler: Force reset called externally');
+    _resetCallState();
+  }
+
+  // Clean up resources
+  void dispose() {
+    print('StandaloneCallHandler: Disposing');
+    _callSubscription?.cancel();
+    _callStateResetTimer?.cancel();
+    _resetCallState();
+    _isInitialized = false;
   }
 }

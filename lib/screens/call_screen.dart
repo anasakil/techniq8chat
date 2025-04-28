@@ -1,6 +1,7 @@
 // screens/call_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:techniq8chat/services/call_service.dart';
@@ -23,28 +24,40 @@ class CallScreen extends StatefulWidget {
   _CallScreenState createState() => _CallScreenState();
 }
 
-class _CallScreenState extends State<CallScreen> {
+class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   late CallService _callService;
   bool _isConnected = false;
   bool _isMuted = false;
+  bool _isEnding = false;
   Timer? _callTimer;
+  Timer? _connectionTimeoutTimer;
   int _callDuration = 0;
   StreamSubscription? _remoteUserJoinedSubscription;
   StreamSubscription? _callEndedSubscription;
+  StreamSubscription? _callStatusChangeSubscription;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Keep screen on
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+        overlays: SystemUiOverlay.values);
+
     _callService = Provider.of<CallService>(context, listen: false);
     _isMuted = _callService.isLocalAudioMuted;
 
     // Listen for remote user joining
-    _remoteUserJoinedSubscription = _callService.onRemoteUserJoined.listen((joined) {
+    _remoteUserJoinedSubscription =
+        _callService.onRemoteUserJoined.listen((joined) {
       if (joined && mounted) {
         setState(() {
           _isConnected = true;
         });
         _startCallTimer();
+        // Cancel timeout timer if it's running
+        _connectionTimeoutTimer?.cancel();
       }
     });
 
@@ -55,10 +68,44 @@ class _CallScreenState extends State<CallScreen> {
       }
     });
 
+    // Also listen for call status changes
+    _callStatusChangeSubscription =
+        _callService.onCallStatusChange.listen((data) {
+      print('Call status update on CallScreen: $data');
+      if (data['status'] == 'ended' && mounted) {
+        _endCall();
+      }
+    });
+
     // If we're answering a call, we're already connected
     if (_callService.isCallConnected) {
       _isConnected = true;
       _startCallTimer();
+    } else {
+      // Start a connection timeout timer
+      _connectionTimeoutTimer = Timer(Duration(seconds: 30), () {
+        if (!_isConnected && mounted) {
+          print('Call connection timeout - ending call');
+          _endCall();
+
+          // Show a toast/snackbar
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('Call failed to connect')));
+        }
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Check if the call is still active when app is resumed
+      if (_callService.currentCallId != widget.callId) {
+        print('Call no longer active on app resume - closing call screen');
+        if (mounted) {
+          _endCall();
+        }
+      }
     }
   }
 
@@ -88,16 +135,66 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   void _endCall() {
-    _callTimer?.cancel();
-    _callService.endCall();
-    Navigator.of(context).pop();
-  }
+  // Prevent multiple calls to endCall
+  if (_isEnding) return;
+  
+  // Set flag first to prevent multiple calls
+  _isEnding = true;
+  print('Call screen - endCall() called, starting cleanup');
+
+  // Cancel timers first
+  _callTimer?.cancel();
+  _callTimer = null;
+  _connectionTimeoutTimer?.cancel();
+  _connectionTimeoutTimer = null;
+
+  // Notify the CallService that the call is ending FIRST
+  _callService.endCall();
+  
+  // Clear any UI resources
+  SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.edgeToEdge,
+    overlays: SystemUiOverlay.values
+  );
+
+  // Give a small delay to let endCall complete before navigation
+  Future.delayed(Duration(milliseconds: 50), () {
+    if (mounted) {
+      print('Attempting to pop call screen');
+      // Pop to a named route instead of just popping
+      try {
+        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+      } catch (e) {
+        print('Error navigating: $e');
+        // Fallback navigation approach
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.of(context).pop();
+        }
+      }
+    }
+  });
+}
 
   @override
   void dispose() {
+    print('CallScreen - dispose called');
+    WidgetsBinding.instance.removeObserver(this);
+
     _callTimer?.cancel();
+    _connectionTimeoutTimer?.cancel();
     _remoteUserJoinedSubscription?.cancel();
     _callEndedSubscription?.cancel();
+    _callStatusChangeSubscription?.cancel();
+
+    // Allow normal screen timeout again
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge,
+        overlays: SystemUiOverlay.values);
+
+    // Make sure all resources are cleaned up
+    if (!_isEnding) {
+      _callService.endCall();
+    }
+
     super.dispose();
   }
 
@@ -118,7 +215,9 @@ class _CallScreenState extends State<CallScreen> {
                     radius: 50,
                     backgroundColor: Colors.white.withOpacity(0.2),
                     child: Text(
-                      widget.username.isNotEmpty ? widget.username[0].toUpperCase() : "?",
+                      widget.username.isNotEmpty
+                          ? widget.username[0].toUpperCase()
+                          : "?",
                       style: const TextStyle(
                         fontSize: 40,
                         fontWeight: FontWeight.bold,
@@ -158,9 +257,7 @@ class _CallScreenState extends State<CallScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _buildActionButton(
-                    icon: _isMuted
-                        ? Icons.mic_off_rounded
-                        : Icons.mic_rounded,
+                    icon: _isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
                     backgroundColor: Colors.white.withOpacity(0.2),
                     onPressed: _toggleMute,
                   ),
