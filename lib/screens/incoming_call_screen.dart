@@ -26,6 +26,10 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   bool _isRejecting = false;
   bool _isClosing = false;
 
+  // Store services to avoid accessing Provider in dispose
+  late CallService _callService;
+  late SocketService _socketService;
+
   // Timer to keep screen awake and show audio visuals
   Timer? _pulseTimer;
   double _pulseValue = 1.0;
@@ -65,6 +69,14 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Cache the services when dependencies change
+    _callService = Provider.of<CallService>(context, listen: false);
+    _socketService = Provider.of<SocketService>(context, listen: false);
+  }
+
   void _startPulseAnimation() {
     _pulseTimer = Timer.periodic(Duration(milliseconds: 1000), (timer) {
       if (!mounted) {
@@ -90,33 +102,32 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   }
 
   @override
-void dispose() {
-  WidgetsBinding.instance.removeObserver(this);
-  _pulseTimer?.cancel();
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pulseTimer?.cancel();
 
-  // Restore system UI and orientation
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
+    // Restore system UI and orientation
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
 
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge,
-      overlays: SystemUiOverlay.values);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge,
+        overlays: SystemUiOverlay.values);
 
-  // Ensure call is marked as processed
-  if (widget.callData['callId'] != null) {
-    try {
-      final socketService = Provider.of<SocketService>(context, listen: false);
-      socketService.completeCallProcessing(widget.callData['callId']);
-    } catch (e) {
-      print('Error in dispose: $e');
+    // Use the cached service instead of Provider
+    if (widget.callData['callId'] != null) {
+      try {
+        _socketService.completeCallProcessing(widget.callData['callId']);
+      } catch (e) {
+        print('Error in dispose: $e');
+      }
     }
-  }
 
-  super.dispose();
-}
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -276,14 +287,6 @@ void dispose() {
     final Map<String, dynamic> callDataCopy =
         Map<String, dynamic>.from(widget.callData);
 
-    // Get services FIRST
-    CallService? callService;
-    try {
-      callService = Provider.of<CallService>(context, listen: false);
-    } catch (e) {
-      print("Error getting CallService: $e");
-    }
-
     // Close the UI first (do this before any heavy processing)
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -299,13 +302,11 @@ void dispose() {
     // Wait a moment for UI to update
     await Future.delayed(Duration(milliseconds: 100));
 
-    // Now process the call acceptance if the service is available
-    if (callService != null) {
-      try {
-        await callService.answerCall(context, callDataCopy);
-      } catch (e) {
-        print("Error answering call: $e");
-      }
+    // Now process the call acceptance using cached service
+    try {
+      await _callService.answerCall(context, callDataCopy);
+    } catch (e) {
+      print("Error answering call: $e");
     }
   }
 
@@ -326,14 +327,6 @@ void dispose() {
     final Map<String, dynamic> callDataCopy =
         Map<String, dynamic>.from(widget.callData);
 
-    // Get service FIRST
-    CallService? callService;
-    try {
-      callService = Provider.of<CallService>(context, listen: false);
-    } catch (e) {
-      print("Error getting CallService: $e");
-    }
-
     // Close the UI first (do this before any heavy processing)
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -349,13 +342,11 @@ void dispose() {
     // Wait a moment for UI to update
     await Future.delayed(Duration(milliseconds: 100));
 
-    // Now process the call rejection if the service is available
-    if (callService != null) {
-      try {
-        await callService.rejectCall(context, callDataCopy);
-      } catch (e) {
-        print("Error rejecting call: $e");
-      }
+    // Now process the call rejection using cached service
+    try {
+      await _callService.rejectCall(context, callDataCopy);
+    } catch (e) {
+      print("Error rejecting call: $e");
     }
   }
 }

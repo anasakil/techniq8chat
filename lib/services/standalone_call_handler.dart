@@ -21,9 +21,11 @@ class StandaloneCallHandler {
   bool _isHandlingCall = false;
   StreamSubscription? _callSubscription;
   StreamSubscription? _callEndedSubscription;
+  final Set<String> _processedCallIds = {};
+
   bool isCallActive() {
-  return _isHandlingCall;
-}
+    return _isHandlingCall;
+  }
 
   // Timer to reset state if call UI fails to show
   Timer? _callStateResetTimer;
@@ -33,87 +35,37 @@ class StandaloneCallHandler {
   Map<String, dynamic>? _pendingCallData;
 
   // Initialize call handler
-  void initialize(SocketService socketService) {
-    // Prevent multiple initializations
-    if (_isInitialized) {
-      print('StandaloneCallHandler: Already initialized');
-      return;
-    }
+ // In standalone_call_handler.dart
+void initialize(SocketService socketService) {
+  // Prevent multiple initializations
+  if (_isInitialized) {
+    print('StandaloneCallHandler: Already initialized');
+    return;
+  }
 
-    print('StandaloneCallHandler: Initializing');
-    _isInitialized = true;
+  print('StandaloneCallHandler: Initializing');
+  _isInitialized = true;
 
-    // Monitor app lifecycle
-    WidgetsBinding.instance.addObserver(_LifecycleObserver(this));
+  // Monitor app lifecycle
+  WidgetsBinding.instance.addObserver(_LifecycleObserver(this));
 
-    // Listen to WebRTC offer stream
-    _callSubscription = socketService.onWebRTCOffer.listen(
-      (callData) {
-        print(
-            'StandaloneCallHandler: Received call data from stream - $callData');
-        _handleIncomingCall(callData);
-      },
-      onError: (error) {
-        print('StandaloneCallHandler: Error in call stream - $error');
-      },
-      cancelOnError: false,
-    );
+  // Single stream subscription for all call events
+  // Consolidate different event types into a single handler
+  socketService.onWebRTCOffer.listen(
+    (callData) {
+      print('StandaloneCallHandler: Received call data from stream - $callData');
+      _handleIncomingCall(callData);
+    },
+    onError: (error) {
+      print('StandaloneCallHandler: Error in call stream - $error');
+    },
+    cancelOnError: false,
+  );
 
-    // Listen to call ended events
-    _callEndedSubscription = socketService.onWebRTCEndCall.listen(
-      (callerId) {
-        print('StandaloneCallHandler: Call ended by caller - $callerId');
-        if (_isHandlingCall) {
-          _resetCallState();
-          // Try to close any open call dialogs
-          final context = navigatorKey.currentContext;
-          if (context != null && Navigator.canPop(context)) {
-            Navigator.of(context).pop();
-          }
-        }
-      },
-      onError: (error) {
-        print('StandaloneCallHandler: Error in call ended stream - $error');
-      },
-      cancelOnError: false,
-    );
-
-    socketService.socket?.on('call_rejected', (data) {
-      print('StandaloneCallHandler: Call rejected event - $data');
-      final callId = data['callId'];
-      if (callId != null) {
-        onCallEnded(callId);
-      }
-    });
-
-    socketService.socket?.on('call_ended', (data) {
-      print('StandaloneCallHandler: Call ended event - $data');
-      final callId = data['callId'];
-      if (callId != null) {
-        onCallEnded(callId);
-      }
-    });
-
-    socketService.socket?.on('webrtc_end_call', (data) {
-      print('StandaloneCallHandler: WebRTC end call event - $data');
-      if (_currentCallId != null) {
-        onCallEnded(_currentCallId!);
-      }
-    });
-
-    // Also listen directly to socket events as backup
-    socketService.socket?.on('incoming_call', (data) {
-      print('StandaloneCallHandler: Direct incoming call event - $data');
-      _handleIncomingCall(data);
-    });
-
-    socketService.socket?.on('webrtc_offer', (data) {
-      print('StandaloneCallHandler: Direct webrtc_offer event - $data');
-      _handleIncomingCall(data);
-    });
-
-    socketService.socket?.on('call_ended', (data) {
-      print('StandaloneCallHandler: Direct call_ended event - $data');
+  // Listen to call ended events
+  _callEndedSubscription = socketService.onWebRTCEndCall.listen(
+    (callerId) {
+      print('StandaloneCallHandler: Call ended by caller - $callerId');
       if (_isHandlingCall) {
         _resetCallState();
         // Try to close any open call dialogs
@@ -122,8 +74,34 @@ class StandaloneCallHandler {
           Navigator.of(context).pop();
         }
       }
-    });
-  }
+    },
+    onError: (error) {
+      print('StandaloneCallHandler: Error in call ended stream - $error');
+    },
+    cancelOnError: false,
+  );
+
+  // IMPORTANT: Register event handlers for end/reject call events
+  // But DON'T register duplicate handlers for incoming calls
+  socketService.socket?.on('call_rejected', (data) {
+    print('StandaloneCallHandler: Call rejected event - $data');
+    final callId = data['callId'];
+    if (callId != null) {
+      onCallEnded(callId);
+    }
+  });
+
+  socketService.socket?.on('call_ended', (data) {
+    print('StandaloneCallHandler: Call ended event - $data');
+    final callId = data['callId'];
+    if (callId != null) {
+      onCallEnded(callId);
+    }
+  });
+
+  // DON'T add duplicate direct socket listeners for incoming calls here
+  // This was causing the duplicate notifications
+}
 
   // Add this method to StandaloneCallHandler class
   void onCallEnded(String callId) {
@@ -160,36 +138,34 @@ class StandaloneCallHandler {
   }
 
   void forceCloseAndReset() {
-  print('StandaloneCallHandler: Force closing and resetting all call UI');
-  final context = navigatorKey.currentContext;
-  if (context != null) {
-    try {
-      // Try to navigate to home rather than just popping
-      Navigator.of(context, rootNavigator: true)
-        .pushNamedAndRemoveUntil('/home', (route) => false);
-    } catch (e) {
-      print('Navigation error: $e');
-      // As fallback, try simple pop
+    print('StandaloneCallHandler: Force closing and resetting all call UI');
+    final context = navigatorKey.currentContext;
+    if (context != null) {
       try {
-        Navigator.of(context, rootNavigator: true).pop();
+        // Try to navigate to home rather than just popping
+        Navigator.of(context, rootNavigator: true)
+            .pushNamedAndRemoveUntil('/home', (route) => false);
       } catch (e) {
-        print('Pop fallback error: $e');
+        print('Navigation error: $e');
+        // As fallback, try simple pop
+        try {
+          Navigator.of(context, rootNavigator: true).pop();
+        } catch (e) {
+          print('Pop fallback error: $e');
+        }
       }
     }
+
+    // Complete reset of all state variables
+    _callStateResetTimer?.cancel();
+    _callStateResetTimer = null;
+    _isHandlingCall = false;
+    _currentCallId = null;
+    _hasPendingCall = false;
+    _pendingCallData = null;
+
+    print('StandaloneCallHandler: State completely reset');
   }
-  
-  // Complete reset of all state variables
-  _callStateResetTimer?.cancel();
-  _callStateResetTimer = null;
-  _isHandlingCall = false;
-  _currentCallId = null;
-  _hasPendingCall = false;
-  _pendingCallData = null;
-  
-  print('StandaloneCallHandler: State completely reset');
-}
-
-
 
   // Called when app lifecycle changes
   void _onAppLifecycleChanged(AppLifecycleState state) {
@@ -221,12 +197,34 @@ class StandaloneCallHandler {
     }
   }
 
-  // Handle incoming call
   void _handleIncomingCall(Map<String, dynamic> callData) {
     // Wake up device first to ensure UI is visible
     HapticFeedback.heavyImpact();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
+
+    // Extract call ID first for deduplication
+    final callId = callData['callId'];
+
+    // Deduplicate by call ID
+    if (callId == null) {
+      print('StandaloneCallHandler: Invalid call data - missing callId');
+      return;
+    }
+
+    // Check if we've already processed this call ID recently
+    if (_processedCallIds.contains(callId)) {
+      print('StandaloneCallHandler: Ignoring duplicate call with ID: $callId');
+      return;
+    }
+
+    // Mark this call ID as processed
+    _processedCallIds.add(callId);
+
+    // Clear the ID after some time (in case of retry)
+    Timer(Duration(seconds: 30), () {
+      _processedCallIds.remove(callId);
+    });
 
     // Normalize the call data field names
     final Map<String, dynamic> normalizedCallData = Map.from(callData);
@@ -243,18 +241,33 @@ class StandaloneCallHandler {
     }
 
     // Extract normalized data
-    final callId = normalizedCallData['callId'];
     final callerId =
         normalizedCallData['callerId'] ?? normalizedCallData['senderId'];
-    final callerName = normalizedCallData['callerName'] ?? 'Unknown User';
+
+    // Improved name resolution with better priority
+    String callerName = normalizedCallData['callerName'] ?? '';
+
+    // If no name directly, try to get from sender object
+    if (callerName.isEmpty && normalizedCallData['sender'] is Map) {
+      callerName = normalizedCallData['sender']['username'] ?? '';
+    }
+
+    // If still empty, use a generic name
+    if (callerName.isEmpty) {
+      callerName = 'Unknown User';
+    }
+
     final callType = normalizedCallData['callType'] ?? 'audio';
 
     print(
-        'StandaloneCallHandler: Normalized call data - caller: $callerId, call: $callId, type: $callType');
+        'StandaloneCallHandler: Normalized call data - caller: $callerId, name: $callerName, call: $callId, type: $callType');
 
-    // Validate normalized data
-    if (callId == null || callerId == null) {
-      print('StandaloneCallHandler: Invalid call data after normalization');
+    // Validate remaining normalized data
+    if (callerId == null) {
+      print(
+          'StandaloneCallHandler: Invalid call data after normalization - missing callerId');
+      _processedCallIds
+          .remove(callId); // Remove from processed list to allow retry
       return;
     }
 

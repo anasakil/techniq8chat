@@ -290,14 +290,83 @@ class SocketService {
       }
     });
 
+    Map<String, dynamic>? _normalizeCallData(dynamic data) {
+      if (data == null) return null;
+
+      try {
+        final Map<String, dynamic> normalizedData = Map.from(data);
+
+        // Ensure we have a callId
+        final callId = normalizedData['callId'];
+        if (callId == null) {
+          print('Invalid call data: missing callId');
+          return null;
+        }
+
+        // Normalize the caller ID
+        if (normalizedData['callerId'] == null &&
+            normalizedData['senderId'] != null) {
+          normalizedData['callerId'] = normalizedData['senderId'];
+        }
+
+        if (normalizedData['senderId'] == null &&
+            normalizedData['callerId'] != null) {
+          normalizedData['senderId'] = normalizedData['callerId'];
+        }
+
+        // Make sure we have a caller ID
+        final callerId =
+            normalizedData['callerId'] ?? normalizedData['senderId'];
+        if (callerId == null) {
+          print('Invalid call data: missing callerId/senderId');
+          return null;
+        }
+
+        // Get the best available caller name
+        String callerName = normalizedData['callerName'] ?? '';
+
+        // Try to get from sender object if empty
+        if (callerName.isEmpty && normalizedData['sender'] is Map) {
+          callerName = normalizedData['sender']['username'] ?? '';
+        }
+
+        // Fetch from contacts or user repository if still empty (optional)
+        if (callerName.isEmpty && currentUser != null) {
+          // You could potentially look up the name here from contacts
+          // For now, use a generic placeholder
+          callerName = 'User';
+        }
+
+        // Use a consistent call type format
+        final callType = normalizedData['callType'] ?? 'audio';
+
+        // Return a clean, normalized object
+        return {
+          'callId': callId,
+          'callerId': callerId,
+          'callerName': callerName,
+          'callType': callType,
+        };
+      } catch (e) {
+        print('Error normalizing call data: $e');
+        return null;
+      }
+    }
+
     _socket?.on('incoming_call', (data) {
-      print('Socket received incoming_call, forwarding to stream');
-      _onWebRTCOffer.add(data);
+      print('Socket received incoming_call event');
+      final normalizedData = _normalizeCallData(data);
+      if (normalizedData != null) {
+        _onWebRTCOffer.add(normalizedData);
+      }
     });
 
     _socket?.on('webrtc_offer', (data) {
-      print('Socket received webrtc_offer, forwarding to stream');
-      _onWebRTCOffer.add(data);
+      print('Socket received webrtc_offer event');
+      final normalizedData = _normalizeCallData(data);
+      if (normalizedData != null) {
+        _onWebRTCOffer.add(normalizedData);
+      }
     });
 
     // Other WebRTC related events

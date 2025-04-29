@@ -25,6 +25,7 @@ class CallScreen extends StatefulWidget {
 }
 
 class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
+  // Store the call service to avoid Provider access in dispose
   late CallService _callService;
   bool _isConnected = false;
   bool _isMuted = false;
@@ -44,55 +45,64 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
     // Keep screen on
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
-
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    
+    // Get and store call service during didChangeDependencies
     _callService = Provider.of<CallService>(context, listen: false);
     _isMuted = _callService.isLocalAudioMuted;
 
-    // Listen for remote user joining
-    _remoteUserJoinedSubscription =
-        _callService.onRemoteUserJoined.listen((joined) {
-      if (joined && mounted) {
-        setState(() {
-          _isConnected = true;
-        });
-        _startCallTimer();
-        // Cancel timeout timer if it's running
-        _connectionTimeoutTimer?.cancel();
-      }
-    });
-
-    // Listen for call ended events
-    _callEndedSubscription = _callService.onCallEnded.listen((ended) {
-      if (ended && mounted) {
-        _endCall();
-      }
-    });
-
-    // Also listen for call status changes
-    _callStatusChangeSubscription =
-        _callService.onCallStatusChange.listen((data) {
-      print('Call status update on CallScreen: $data');
-      if (data['status'] == 'ended' && mounted) {
-        _endCall();
-      }
-    });
-
-    // If we're answering a call, we're already connected
-    if (_callService.isCallConnected) {
-      _isConnected = true;
-      _startCallTimer();
-    } else {
-      // Start a connection timeout timer
-      _connectionTimeoutTimer = Timer(Duration(seconds: 30), () {
-        if (!_isConnected && mounted) {
-          print('Call connection timeout - ending call');
-          _endCall();
-
-          // Show a toast/snackbar
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('Call failed to connect')));
+    // Set up listeners only once
+    if (_remoteUserJoinedSubscription == null) {
+      // Listen for remote user joining
+      _remoteUserJoinedSubscription =
+          _callService.onRemoteUserJoined.listen((joined) {
+        if (joined && mounted) {
+          setState(() {
+            _isConnected = true;
+          });
+          _startCallTimer();
+          // Cancel timeout timer if it's running
+          _connectionTimeoutTimer?.cancel();
         }
       });
+
+      // Listen for call ended events
+      _callEndedSubscription = _callService.onCallEnded.listen((ended) {
+        if (ended && mounted) {
+          _endCall();
+        }
+      });
+
+      // Also listen for call status changes
+      _callStatusChangeSubscription =
+          _callService.onCallStatusChange.listen((data) {
+        print('Call status update on CallScreen: $data');
+        if (data['status'] == 'ended' && mounted) {
+          _endCall();
+        }
+      });
+
+      // If we're answering a call, we're already connected
+      if (_callService.isCallConnected) {
+        _isConnected = true;
+        _startCallTimer();
+      } else {
+        // Start a connection timeout timer
+        _connectionTimeoutTimer = Timer(Duration(seconds: 30), () {
+          if (!_isConnected && mounted) {
+            print('Call connection timeout - ending call');
+            _endCall();
+
+            // Show a toast/snackbar
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('Call failed to connect')));
+          }
+        });
+      }
     }
   }
 
@@ -135,45 +145,45 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
   }
 
   void _endCall() {
-  // Prevent multiple calls to endCall
-  if (_isEnding) return;
-  
-  // Set flag first to prevent multiple calls
-  _isEnding = true;
-  print('Call screen - endCall() called, starting cleanup');
+    // Prevent multiple calls to endCall
+    if (_isEnding) return;
+    
+    // Set flag first to prevent multiple calls
+    _isEnding = true;
+    print('Call screen - endCall() called, starting cleanup');
 
-  // Cancel timers first
-  _callTimer?.cancel();
-  _callTimer = null;
-  _connectionTimeoutTimer?.cancel();
-  _connectionTimeoutTimer = null;
+    // Cancel timers first
+    _callTimer?.cancel();
+    _callTimer = null;
+    _connectionTimeoutTimer?.cancel();
+    _connectionTimeoutTimer = null;
 
-  // Notify the CallService that the call is ending FIRST
-  _callService.endCall();
-  
-  // Clear any UI resources
-  SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.edgeToEdge,
-    overlays: SystemUiOverlay.values
-  );
+    // Notify the CallService that the call is ending FIRST
+    _callService.endCall();
+    
+    // Clear any UI resources
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.edgeToEdge,
+      overlays: SystemUiOverlay.values
+    );
 
-  // Give a small delay to let endCall complete before navigation
-  Future.delayed(Duration(milliseconds: 50), () {
-    if (mounted) {
-      print('Attempting to pop call screen');
-      // Pop to a named route instead of just popping
-      try {
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
-      } catch (e) {
-        print('Error navigating: $e');
-        // Fallback navigation approach
-        if (mounted && Navigator.canPop(context)) {
-          Navigator.of(context).pop();
+    // Give a small delay to let endCall complete before navigation
+    Future.delayed(Duration(milliseconds: 50), () {
+      if (mounted) {
+        print('Attempting to pop call screen');
+        // Pop to a named route instead of just popping
+        try {
+          Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+        } catch (e) {
+          print('Error navigating: $e');
+          // Fallback navigation approach
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.of(context).pop();
+          }
         }
       }
-    }
-  });
-}
+    });
+  }
 
   @override
   void dispose() {
@@ -191,6 +201,7 @@ class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
         overlays: SystemUiOverlay.values);
 
     // Make sure all resources are cleaned up
+    // Use the cached _callService instead of Provider.of
     if (!_isEnding) {
       _callService.endCall();
     }
