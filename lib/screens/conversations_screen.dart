@@ -578,7 +578,7 @@ class _ConversationsScreenState extends State<ConversationsScreen>
             backgroundImage: conversation.profilePicture != null &&
                     conversation.profilePicture!.isNotEmpty &&
                     !conversation.profilePicture!.contains('default-avatar')
-                ? NetworkImage('http://192.168.100.83:4400/${conversation.profilePicture}')
+                ? NetworkImage('http://51.178.138.50:4400/${conversation.profilePicture}')
                 : null,
             child: (conversation.profilePicture == null ||
                     conversation.profilePicture!.isEmpty ||

@@ -148,6 +148,51 @@ class CallService {
     });
   }
 
+
+
+
+  // Toggle speaker mode
+Future<bool> toggleSpeaker() async {
+  if (!isCallActive || _engine == null) return false;
+
+  try {
+    // Get current speaker status first
+    final currentStatus = await _engine!.isSpeakerphoneEnabled();
+    
+    // Toggle to opposite state
+    await _engine!.setEnableSpeakerphone(!currentStatus);
+    
+    // Verify the new state
+    final newStatus = await _engine!.isSpeakerphoneEnabled();
+    
+    print('Speaker toggled from $currentStatus to $newStatus');
+    return newStatus;
+  } catch (e) {
+    print('Error toggling speaker: $e');
+    // Return the previous value as fallback
+    try {
+      return await _engine!.isSpeakerphoneEnabled();
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+// Check if speaker is enabled
+Future<bool> isSpeakerEnabled() async {
+  if (!isCallActive || _engine == null) return false;
+
+  try {
+    return await _engine!.isSpeakerphoneEnabled();
+  } catch (e) {
+    print('Error checking speaker status: $e');
+    return false;
+  }
+}
+
+
+
+
   // Initialize Agora engine
   Future<void> _initializeAgoraEngine() async {
     if (_engine != null) return;

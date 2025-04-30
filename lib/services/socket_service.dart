@@ -13,7 +13,7 @@ class SocketService {
 
   bool isConnected = false;
   final String serverUrl =
-      'http://192.168.100.83:4400'; // Update with your server URL
+      'http://51.178.138.50:4400'; // Update with your server URL
 
   // Service dependencies
   final HiveStorage hiveStorage = HiveStorage();

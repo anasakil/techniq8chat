@@ -54,6 +54,9 @@ dependencies:
   permission_handler_windows: ^0.2.1
   permission_handler_platform_interface: ^4.3.0
   agora_rtc_engine: ^6.2.0
+  flutter_staggered_animations: ^1.1.1
+
+
 
 
   
